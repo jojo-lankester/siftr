@@ -1,0 +1,6 @@
+yt-dlp
+flask
+pillow
+imagehash
+pyyaml
+opencv-python
