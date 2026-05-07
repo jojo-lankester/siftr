@@ -1,0 +1,7 @@
+# videos.txt — one YouTube URL per line
+# Lines starting with # and blank lines are ignored.
+# Example:
+# https://www.youtube.com/watch?v=dQw4w9WgXcQ
+
+https://www.youtube.com/watch?v=PLACEHOLDER_1
+https://www.youtube.com/watch?v=PLACEHOLDER_2
