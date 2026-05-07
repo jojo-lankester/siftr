@@ -6,13 +6,15 @@ downloads each video (video-only, highest quality) via yt-dlp,
 records metadata in the videos table, and logs a run summary.
 
 Usage:
-    python download.py
+    python download.py                  # harvest from videos.txt
+    python download.py --retry-failed   # retry URLs in logs/failed_urls.txt
 """
 
+from __future__ import annotations
+
+import argparse
 import logging
-import os
 import random
-import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -28,6 +30,9 @@ VIDEOS_TXT = BASE_DIR / "videos.txt"
 DB_PATH = BASE_DIR / "database.sqlite"
 DOWNLOAD_DIR = BASE_DIR / "frames" / "_raw_downloads"
 LOG_PATH = BASE_DIR / "logs" / "harvest.log"
+FAILED_URLS_PATH = BASE_DIR / "logs" / "failed_urls.txt"
+
+RETRY_DELAYS = [30, 60]  # seconds between attempt 1→2 and 2→3
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +96,9 @@ def extract_video_id(url: str) -> str | None:
 
 
 def read_urls(path: Path) -> list[str]:
-    """Return non-empty, non-comment lines from videos.txt."""
+    """Return non-empty, non-comment lines from a URL list file."""
     if not path.exists():
-        log.warning("videos.txt not found at %s", path)
+        log.warning("URL file not found: %s", path)
         return []
     urls = []
     with open(path, encoding="utf-8") as f:
@@ -102,6 +107,25 @@ def read_urls(path: Path) -> list[str]:
             if line and not line.startswith("#"):
                 urls.append(line)
     return urls
+
+
+# ---------------------------------------------------------------------------
+# Failed-URL tracking
+# ---------------------------------------------------------------------------
+
+def append_failed_url(url: str, error: str) -> None:
+    """Append a failed URL with its error and timestamp to failed_urls.txt."""
+    FAILED_URLS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    with open(FAILED_URLS_PATH, "a", encoding="utf-8") as f:
+        f.write(f"# Failed: {timestamp} | {error}\n")
+        f.write(f"{url}\n")
+
+
+def clear_failed_urls() -> None:
+    """Truncate failed_urls.txt at the start of a retry run."""
+    if FAILED_URLS_PATH.exists():
+        FAILED_URLS_PATH.write_text("", encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -130,46 +154,95 @@ def count_videos(conn: sqlite3.Connection) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Download
+# Download (with retry)
 # ---------------------------------------------------------------------------
 
-def download_video(url: str, video_id: str, dest_dir: Path) -> dict | None:
+def download_video(url: str, video_id: str, dest_dir: Path,
+                   cookies_browser: str | None = None,
+                   player_client: str | None = None) -> dict | None:
     """
-    Download the best video-only stream for *url* into *dest_dir*.
-    Returns yt-dlp's info dict on success, None on failure.
+    Download the best available stream for *url* into *dest_dir*.
+    Returns yt-dlp's info dict on success, raises on failure.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     ydl_opts = {
-        # Best video-only stream, no audio
-        "format": "bestvideo[ext=mp4]/bestvideo",
+        # Prefer video-only; fall back to best combined stream if YouTube
+        # blocks separate streams (e.g. SABR streaming enforcement).
+        "format": "bestvideo[ext=mp4]/bestvideo/best[ext=mp4]/best",
         "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
-        # Suppress yt-dlp's own stdout chatter; we log ourselves
         "quiet": True,
         "no_warnings": False,
-        # Don't re-download if the file already exists
         "nooverwrites": True,
     }
+
+    if cookies_browser:
+        ydl_opts["cookiesfrombrowser"] = (cookies_browser,)
+
+    if player_client:
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": [player_client]}}
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
     return info
 
 
+def download_with_retry(url: str, video_id: str, dest_dir: Path,
+                        cookies_browser: str | None,
+                        player_client: str | None,
+                        position: str) -> dict | None:
+    """
+    Attempt download up to 1 + len(RETRY_DELAYS) times.
+    Returns info dict on success, or None if all attempts fail (after logging
+    each attempt and appending the URL to failed_urls.txt).
+    """
+    max_attempts = 1 + len(RETRY_DELAYS)
+    last_error: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if attempt > 1:
+                log.info("%s RETRY %d/%d  %s", position, attempt, max_attempts, video_id)
+            info = download_video(url, video_id, dest_dir, cookies_browser, player_client)
+            return info
+        except Exception as exc:
+            last_error = exc
+            if attempt < max_attempts:
+                wait = RETRY_DELAYS[attempt - 1]
+                log.warning("%s attempt %d failed: %s — retrying in %ds",
+                            position, attempt, exc, wait)
+                time.sleep(wait)
+            else:
+                log.error("%s FAIL (all %d attempts)  %s  —  %s",
+                          position, max_attempts, video_id, exc)
+
+    append_failed_url(url, str(last_error))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main harvest
 # ---------------------------------------------------------------------------
 
-def run_harvest() -> None:
+def run_harvest(url_source: Path) -> None:
     log.info("=" * 60)
-    log.info("SIFTR harvest started")
+    if url_source == FAILED_URLS_PATH:
+        log.info("SIFTR harvest started  [retrying failed URLs]")
+    else:
+        log.info("SIFTR harvest started")
 
     cfg = load_config()
     delay_min = cfg.get("download_delay_min", 3)
     delay_max = cfg.get("download_delay_max", 8)
+    cookies_browser = cfg.get("cookies_browser") or None
+    player_client = cfg.get("youtube_player_client") or None
 
-    urls = read_urls(VIDEOS_TXT)
-    log.info("Found %d URL(s) in videos.txt", len(urls))
+    urls = read_urls(url_source)
+    log.info("Found %d URL(s) in %s", len(urls), url_source.name)
+
+    # Clear failed_urls.txt before a retry run so it only reflects this run's results
+    if url_source == FAILED_URLS_PATH:
+        clear_failed_urls()
 
     conn = sqlite3.connect(DB_PATH)
     existing_ids = get_existing_ids(conn)
@@ -180,31 +253,33 @@ def run_harvest() -> None:
     failures = 0
 
     for idx, url in enumerate(urls, start=1):
+        position = f"[{idx}/{len(urls)}]"
         video_id = extract_video_id(url)
 
         if not video_id:
-            log.warning("[%d/%d] Cannot parse video ID from URL: %s", idx, len(urls), url)
+            log.warning("%s Cannot parse video ID from URL: %s", position, url)
+            append_failed_url(url, "Could not parse video ID")
             failures += 1
             continue
 
         if video_id in existing_ids:
-            log.info("[%d/%d] SKIP  %s (already in database)", idx, len(urls), video_id)
+            log.info("%s SKIP  %s (already in database)", position, video_id)
             skipped += 1
             continue
 
-        log.info("[%d/%d] START %s  —  %s", idx, len(urls), video_id, url)
+        log.info("%s START %s  —  %s", position, video_id, url)
 
-        try:
-            info = download_video(url, video_id, DOWNLOAD_DIR)
-            title = info.get("title", "") if info else ""
+        info = download_with_retry(url, video_id, DOWNLOAD_DIR,
+                                   cookies_browser, player_client, position)
+        if info is not None:
+            title = info.get("title", "")
             insert_video(conn, video_id, url, title)
-            log.info("[%d/%d] OK    %s  —  \"%s\"", idx, len(urls), video_id, title)
+            log.info('%s OK    %s  —  "%s"', position, video_id, title)
             processed += 1
-        except Exception as exc:
-            log.error("[%d/%d] FAIL  %s  —  %s", idx, len(urls), video_id, exc)
+        else:
             failures += 1
 
-        # Polite delay between downloads (skip after the last URL)
+        # Polite delay between videos (skip after the last one)
         if idx < len(urls):
             delay = random.uniform(delay_min, delay_max)
             log.debug("Waiting %.1fs before next download", delay)
@@ -219,8 +294,23 @@ def run_harvest() -> None:
     log.info("  Skipped (already in DB)   : %d", skipped)
     log.info("  Failures                  : %d", failures)
     log.info("  Total videos in database  : %d", total_in_db)
+    if failures and FAILED_URLS_PATH.exists() and FAILED_URLS_PATH.stat().st_size > 0:
+        log.info("  Failed URLs logged to     : %s", FAILED_URLS_PATH)
     log.info("=" * 60)
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    run_harvest()
+    parser = argparse.ArgumentParser(description="SIFTR YouTube harvest")
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Retry URLs from logs/failed_urls.txt instead of videos.txt",
+    )
+    args = parser.parse_args()
+
+    source = FAILED_URLS_PATH if args.retry_failed else VIDEOS_TXT
+    run_harvest(source)

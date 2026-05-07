@@ -3,5 +3,5 @@
 # Example:
 # https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
-https://www.youtube.com/watch?v=PLACEHOLDER_1
-https://www.youtube.com/watch?v=PLACEHOLDER_2
+https://youtu.be/h3AtfvoNgWg?si=rFCnVqcStOj-ip4z
+https://youtu.be/b6kajtaCGoY?si=rg0gxgReiEXYWE71

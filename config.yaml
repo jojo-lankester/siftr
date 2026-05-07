@@ -1,3 +1,5 @@
+cookies_browser: chrome
+youtube_player_client: android
 download_delay_min: 3
 download_delay_max: 8
 frame_extraction_method: scene_change
