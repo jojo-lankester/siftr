@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SIFTR — select market</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/siftr.css') }}" />
+</head>
+<body class="chooser-page">
+
+<div class="chooser-wrap">
+  <header class="chooser-header">
+    <div class="wordmark">SIFTR</div>
+    <div class="wordmark-sub">creator footage curator</div>
+  </header>
+
+  <h1 class="chooser-title">Select a market to review</h1>
+
+  <div class="chooser-grid">
+    {% for m in markets %}
+    <a class="chooser-card" href="{{ url_for('review', market_code=m.market) }}">
+      <div class="chooser-card-top">
+        <span class="chooser-market-code">{{ m.market }}</span>
+        {% if m.unreviewed_count and m.unreviewed_count > 0 %}
+        <span class="pill-new">NEW</span>
+        {% endif %}
+      </div>
+      <div class="chooser-stats">
+        <span>{{ m.creator_count }} creator{{ 's' if m.creator_count != 1 else '' }}</span>
+        <span class="stat-sep">·</span>
+        <span>{{ m.video_count }} video{{ 's' if m.video_count != 1 else '' }}</span>
+        <span class="stat-sep">·</span>
+        <span>{{ m.frame_count }} frame{{ 's' if m.frame_count != 1 else '' }}</span>
+      </div>
+      <div class="chooser-sub-stats">
+        {% if m.unreviewed_count and m.unreviewed_count > 0 %}
+        <span class="stat-new">{{ m.unreviewed_count }} unreviewed</span>
+        {% endif %}
+        {% if m.shortlisted_count and m.shortlisted_count > 0 %}
+        <span class="stat-short">{{ m.shortlisted_count }} shortlisted</span>
+        {% endif %}
+        {% if not m.unreviewed_count and not m.shortlisted_count %}
+        <span class="stat-empty">No frames yet</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SIFTR — {{ market_code }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/siftr.css') }}" />
+</head>
+<body class="review-page">
+
+<!-- ───── TOP BAR ───── -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <span class="wordmark">SIFTR</span>
+    <span class="wordmark-sub">creator footage curator</span>
+  </div>
+  <a class="switch-market-link" href="{{ url_for('index') }}">Switch market</a>
+</header>
+
+<!-- ───── MARKET HEADER ───── -->
+<div class="market-header">
+  <div class="market-header-inner">
+    <p class="market-label">REVIEWING MARKET</p>
+    <h1 class="market-code">{{ market_code }}</h1>
+    <p class="market-stats">
+      <span>{{ stats.video_count }} video{{ 's' if stats.video_count != 1 else '' }}</span>
+      <span class="stat-sep">·</span>
+      <span>{{ stats.frame_count }} frame{{ 's' if stats.frame_count != 1 else '' }}</span>
+      <span class="stat-sep">·</span>
+      <span>{{ stats.shortlisted_count or 0 }} shortlisted</span>
+    </p>
+  </div>
+</div>
+
+<!-- ───── FILTER BAR ───── -->
+<div class="filter-bar">
+  <form id="filter-form" method="get" action="{{ url_for('review', market_code=market_code) }}">
+    <input type="hidden" name="show" id="show-input" value="{{ show }}" />
+
+    <div class="filter-dropdowns">
+      <label class="filter-label">
+        Creator
+        <select name="creator" class="filter-select" onchange="this.form.submit()">
+          <option value="">All creators</option>
+          {% for c in creators %}
+          <option value="{{ c }}" {% if creator_filter == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="filter-label">
+        Theme
+        <select name="theme" class="filter-select" onchange="this.form.submit()">
+          <option value="">All themes</option>
+          {% for t in all_themes %}
+          <option value="{{ t }}" {% if theme_filter == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="toggle-three" role="group" aria-label="Show filter">
+      <button type="button" class="toggle-btn {% if show == 'unreviewed' %}active{% endif %}"
+        data-value="unreviewed" onclick="setShow('unreviewed')">Unreviewed</button>
+      <button type="button" class="toggle-btn {% if show == 'all' %}active{% endif %}"
+        data-value="all" onclick="setShow('all')">All</button>
+      <button type="button" class="toggle-btn {% if show == 'shortlisted' %}active{% endif %}"
+        data-value="shortlisted" onclick="setShow('shortlisted')">Shortlisted</button>
+    </div>
+  </form>
+</div>
+
+<!-- ───── GRID ───── -->
+<main class="review-main">
+  {% if not groups %}
+  <div class="empty-state">
+    <p>No frames match the current filter.</p>
+    <a href="{{ url_for('review', market_code=market_code, show='all') }}">Show all frames</a>
+  </div>
+  {% endif %}
+
+  {% for creator_block in groups %}
+  <section class="creator-section">
+    <h2 class="creator-name">{{ creator_block.creator_name }}</h2>
+
+    {% for video in creator_block.videos %}
+    <div class="video-block" data-video-id="{{ video.video_id }}">
+
+      <div class="video-header">
+        <div class="video-header-left">
+          <h3 class="video-title">{{ video.video_title }}</h3>
+          <span class="video-frame-count mono">
+            {{ video.total_frames }} frame{{ 's' if video.total_frames != 1 else '' }}
+            {% if video.shortlisted > 0 %}
+            <span class="shortlisted-count">· {{ video.shortlisted }} shortlisted</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="video-themes" data-video-id="{{ video.video_id }}">
+          {% for tag in video.themes %}
+          <span class="theme-chip">
+            {{ tag }}
+            <button class="theme-remove" data-tag="{{ tag }}" aria-label="Remove {{ tag }}">×</button>
+          </span>
+          {% endfor %}
+          <button class="theme-add-btn" aria-label="Add theme">+</button>
+          <input class="theme-add-input hidden" type="text" placeholder="add theme…" maxlength="30" />
+        </div>
+      </div>
+
+      <div class="frames-grid">
+        {% for frame in video.frames %}
+        {% set parts = frame.frame_id.split('__') %}
+        {% set market_lower = parts[0] if parts|length > 0 else '' %}
+        {% set creator_slug = parts[1] if parts|length > 1 else '' %}
+        {% set img_url = url_for('serve_frame', market=market_lower, creator_slug=creator_slug, filename=frame.frame_id ~ '.jpg') %}
+        <button
+          class="frame {% if frame.status == 'shortlisted' %}shortlisted{% endif %}"
+          data-frame-id="{{ frame.frame_id }}"
+          data-status="{{ frame.status }}"
+          aria-label="Frame at {{ frame.timecode }}, {% if frame.status == 'shortlisted' %}shortlisted{% else %}not shortlisted{% endif %}"
+        >
+          <div class="frame-img-wrap">
+            <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
+            <div class="frame-shortlist-mark" aria-hidden="true"></div>
+          </div>
+          <div class="frame-meta mono">{{ frame.timecode }}</div>
+        </button>
+        {% endfor %}
+      </div>
+
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+</main>
+
+<script src="{{ url_for('static', filename='js/siftr.js') }}"></script>
+<script>
+  function setShow(value) {
+    document.getElementById('show-input').value = value;
+    document.getElementById('filter-form').submit();
+  }
+</script>
+</body>
+</html>
