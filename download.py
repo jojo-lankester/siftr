@@ -8,6 +8,15 @@ records metadata in the videos table, and logs a run summary.
 Usage:
     python download.py                  # harvest from videos.txt
     python download.py --retry-failed   # retry URLs in logs/failed_urls.txt
+
+KNOWN LIMITATION — 360p output (SABR streaming):
+    YouTube's SABR streaming enforcement means yt-dlp currently only receives
+    360p streams for most videos, regardless of what quality is available on
+    the site. The android player_client workaround bypasses SABR but doesn't
+    support cookies; the web client supports cookies but is SABR-restricted.
+    Before production use, this needs to be resolved — most likely by
+    configuring a PO Token (Proof of Origin token) from an authenticated
+    Chrome session. See: https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
 """
 
 from __future__ import annotations

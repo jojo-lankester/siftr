@@ -6,8 +6,9 @@ frame_extraction_method: scene_change
 uniform_sampling_interval: 30
 min_frames_per_video: 10
 dedup_threshold: 90
-min_resolution_width: 1920
-min_resolution_height: 1080
+# DEV MODE: lowered to match 360p test downloads. Raise back to 1920/1080 before production.
+min_resolution_width: 640
+min_resolution_height: 360
 review_batch_size: 30
 nearby_frames_window: 60
 available_themes:
