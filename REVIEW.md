@@ -26,6 +26,17 @@ Jack built a similar tool last year and has hands-on experience of what "useful 
 
 ---
 
+## Data structure decisions (Step 4)
+
+The market → creator → videos hierarchy in `videos.yaml` was chosen deliberately:
+
+- **Matches the team's actual workflow** — the team works market-by-market; market is the natural top-level grouping for both harvest runs and UI browsing.
+- **Supports future UI input patterns** — e.g. "select market, paste a list of creator channel URLs" as a one-step onboarding flow, rather than requiring per-video URL entry.
+- **Enables auto-fetch features** — once channel-level discovery is built (Step 8), the YAML structure already has the right anchor points (market + creator) to attach auto-discovered videos to.
+- **`creator_slug` is explicit**, not derived from the name, so renaming a creator (e.g. rebranding) doesn't silently break folder paths or frame filenames.
+
+---
+
 ## Items to review when we have real data
 
 - **Volume per video** (currently averaging 50–100 frames) — is this overwhelming or appropriate for a review session? The `review_batch_size` config setting (currently `30`) controls how many are shown at once, but the total pool size matters too.

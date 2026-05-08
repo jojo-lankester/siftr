@@ -241,7 +241,9 @@ def process_video(
     """
     video_id = video["video_id"]
     market = slugify(video["market"]) if video["market"] else "unknown"
-    creator = slugify(video["creator_name"]) if video["creator_name"] else "unknown"
+    # Use creator_slug from DB directly; fall back to slugifying creator_name
+    creator = (video["creator_slug"]
+               or (slugify(video["creator_name"]) if video["creator_name"] else "unknown"))
 
     video_path = find_video_file(video_id)
     if not video_path:
@@ -344,14 +346,15 @@ def run_extraction() -> dict:
     conn = sqlite3.connect(DB_PATH)
 
     rows = conn.execute("""
-        SELECT v.video_id, v.creator_name, v.market, v.video_title
+        SELECT v.video_id, v.creator_name, v.creator_slug, v.market, v.video_title
         FROM videos v
         WHERE NOT EXISTS (
             SELECT 1 FROM frames f WHERE f.video_id = v.video_id
         )
     """).fetchall()
     videos = [
-        {"video_id": r[0], "creator_name": r[1], "market": r[2], "title": r[3]}
+        {"video_id": r[0], "creator_name": r[1], "creator_slug": r[2],
+         "market": r[3], "title": r[4]}
         for r in rows
     ]
 

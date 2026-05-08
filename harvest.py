@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from download import FAILED_URLS_PATH, VIDEOS_TXT, run_harvest
+from download import FAILED_URLS_PATH, VIDEOS_YAML, run_harvest
 from extract_frames import run_extraction
 
 
@@ -24,7 +24,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    source = FAILED_URLS_PATH if args.retry_failed else VIDEOS_TXT
+    source = FAILED_URLS_PATH if args.retry_failed else VIDEOS_YAML
     run_harvest(source)
     run_extraction()
 
