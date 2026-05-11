@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import csv
 import os
+import shutil
 import sqlite3
+from datetime import datetime, timezone
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "database.sqlite")
 FRAMES_DIR = os.path.join(BASE_DIR, "frames")
+EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 
 app = Flask(__name__)
 
@@ -276,6 +280,150 @@ def update_themes(video_id: str):
     conn.commit()
     conn.close()
     return jsonify({"themes": themes})
+
+
+# ---------------------------------------------------------------------------
+# API: export market frames
+#
+# mode="new"  — export_status = 'shortlisted' only (not yet exported)
+# mode="all"  — export_status IN ('shortlisted', 'exported') (re-export everything)
+#
+# Per-run steps:
+#   1. Determine next export_round for this market
+#   2. Create exports/export__{market}__{date}__round{N}/
+#   3. Copy each source frame; mark export_status on success or failure
+#   4. Write manifest.csv
+#   5. Return summary JSON
+# ---------------------------------------------------------------------------
+
+_CSV_FIELDS = [
+    "frame_id", "creator_name", "market", "video_title", "video_url",
+    "timecode", "themes", "export_round", "first_exported_at",
+    "this_exported_at",
+    # resolution and high_res_status are placeholders until Step 7.5
+    # (Playwright high-res capture). Remove/update when that ships.
+    "resolution", "high_res_status",
+]
+
+
+@app.post("/api/market/<market_code>/export")
+def export_market(market_code: str):
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode", "new")  # "new" | "all"
+
+    conn = get_db()
+
+    # Verify market exists
+    if not conn.execute("SELECT 1 FROM videos WHERE market = ? LIMIT 1", (market_code,)).fetchone():
+        conn.close()
+        return jsonify({"error": "market not found"}), 404
+
+    # Determine which frames to include
+    if mode == "all":
+        status_filter = "AND f.export_status IN ('shortlisted', 'exported')"
+    else:
+        status_filter = "AND f.export_status = 'shortlisted'"
+
+    frames = conn.execute(f"""
+        SELECT
+            f.frame_id, f.timecode, f.resolution, f.exported_at,
+            v.creator_name, v.market, v.video_title, v.video_url, v.themes
+        FROM frames f
+        JOIN videos v ON f.video_id = v.video_id
+        WHERE v.market = ? {status_filter}
+        ORDER BY v.creator_name, f.timestamp_seconds
+    """, (market_code,)).fetchall()
+
+    if not frames:
+        conn.close()
+        return jsonify({"error": "no frames to export"}), 400
+
+    # Next export round for this market
+    row = conn.execute("""
+        SELECT MAX(f.export_round)
+        FROM frames f JOIN videos v ON f.video_id = v.video_id
+        WHERE v.market = ?
+    """, (market_code,)).fetchone()
+    export_round = (row[0] or 0) + 1
+
+    # Create export folder
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    folder_name = f"export__{market_code}__{date_str}__round{export_round}"
+    export_dir = os.path.join(EXPORTS_DIR, folder_name)
+    os.makedirs(export_dir, exist_ok=True)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    results: dict[str, dict] = {}
+    manifest_rows: list[dict] = []
+
+    for frame in frames:
+        frame_id = frame["frame_id"]
+        parts = frame_id.split("__")
+        market_lower, creator_slug = parts[0], parts[1]
+        src = os.path.join(FRAMES_DIR, market_lower, creator_slug, frame_id + ".jpg")
+        dst = os.path.join(export_dir, frame_id + ".jpg")
+
+        try:
+            shutil.copy2(src, dst)
+
+            first_exported_at = frame["exported_at"] or now
+
+            conn.execute("""
+                UPDATE frames SET
+                    export_status = 'exported',
+                    exported_at   = ?,
+                    export_round  = ?,
+                    export_error  = NULL
+                WHERE frame_id = ?
+            """, (now, export_round, frame_id))
+
+            manifest_rows.append({
+                "frame_id":          frame_id,
+                "creator_name":      frame["creator_name"],
+                "market":            frame["market"],
+                "video_title":       frame["video_title"],
+                "video_url":         frame["video_url"] or "",
+                "timecode":          frame["timecode"],
+                "themes":            frame["themes"] or "",
+                "export_round":      export_round,
+                "first_exported_at": first_exported_at,
+                "this_exported_at":  now,
+                "resolution":        frame["resolution"] or "640x360",
+                "high_res_status":   "low_res_only",
+            })
+
+            results[frame_id] = {"export_status": "exported"}
+
+        except Exception as exc:
+            error_msg = str(exc)
+            conn.execute("""
+                UPDATE frames SET
+                    export_status = 'export_failed',
+                    export_error  = ?
+                WHERE frame_id = ?
+            """, (error_msg, frame_id))
+            results[frame_id] = {"export_status": "export_failed", "error": error_msg}
+
+    # Write manifest.csv
+    csv_path = os.path.join(export_dir, "manifest.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(manifest_rows)
+
+    conn.commit()
+    conn.close()
+
+    exported = sum(1 for v in results.values() if v["export_status"] == "exported")
+    failed   = sum(1 for v in results.values() if v["export_status"] == "export_failed")
+
+    return jsonify({
+        "export_round": export_round,
+        "folder":       folder_name,
+        "exported":     exported,
+        "failed":       failed,
+        "results":      results,
+    })
 
 
 if __name__ == "__main__":

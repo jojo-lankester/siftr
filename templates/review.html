@@ -67,28 +67,78 @@
     <div class="status-filters" role="group" aria-label="Show filter">
       <span class="status-label">STATUS</span>
       <div class="status-panel">
-        <button type="button" class="status-opt {% if show == 'all' %}active{% endif %}" onclick="setShow('all')">
+        <button type="button" data-show-val="all" class="status-opt {% if show == 'all' %}active{% endif %}" onclick="setShow('all')">
           All{% if stats.frame_count %}<span class="status-count">{{ stats.frame_count }}</span>{% endif %}
         </button>
 
-        <button type="button" class="status-opt {% if show == 'unreviewed' %}active{% endif %}" onclick="setShow('unreviewed')">
+        <button type="button" data-show-val="unreviewed" class="status-opt {% if show == 'unreviewed' %}active{% endif %}" onclick="setShow('unreviewed')">
           Unreviewed{% if stats.unreviewed_count %}<span class="status-count">{{ stats.unreviewed_count }}</span>{% endif %}
         </button>
 
-        <button type="button" class="status-opt status-opt--shortlisted {% if show == 'shortlisted' %}active{% endif %}" onclick="setShow('shortlisted')">
+        <button type="button" data-show-val="shortlisted" class="status-opt status-opt--shortlisted {% if show == 'shortlisted' %}active{% endif %}" onclick="setShow('shortlisted')">
           Shortlisted{% if stats.shortlisted_count %}<span class="status-count">{{ stats.shortlisted_count }}</span>{% endif %}
         </button>
 
-        <button type="button" class="status-opt status-opt--exported {% if show == 'exported' %}active{% endif %}" onclick="setShow('exported')">
+        <button type="button" data-show-val="exported" class="status-opt status-opt--exported {% if show == 'exported' %}active{% endif %}" onclick="setShow('exported')">
           Exported{% if stats.exported_count %}<span class="status-count">{{ stats.exported_count }}</span>{% endif %}
         </button>
 
-        <button type="button" class="status-opt status-opt--failed {% if show == 'failed' %}active{% endif %}" onclick="setShow('failed')">
+        <button type="button" data-show-val="failed" class="status-opt status-opt--failed {% if show == 'failed' %}active{% endif %}" onclick="setShow('failed')">
           Failed{% if stats.failed_count %}<span class="status-count">{{ stats.failed_count }}</span>{% endif %}
         </button>
       </div>
     </div>
   </form>
+</div>
+
+<!-- ───── EXPORT BAR (shortlisted view only) ───── -->
+{% if show == 'shortlisted' %}
+<div class="export-bar">
+  <button class="export-btn" id="export-btn" type="button">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M7 1v8M4 6l3 3 3-3M2 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Export
+  </button>
+</div>
+{% endif %}
+
+<!-- ───── EXPORT MODAL ───── -->
+<div class="export-overlay" id="export-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="export-modal-title">
+  <div class="export-modal">
+    <h2 class="export-modal-title" id="export-modal-title">Export frames</h2>
+    <p class="export-modal-market">{{ market_code }} market</p>
+
+    <div class="export-options">
+      <button class="export-option" id="export-new-btn" type="button">
+        <div class="export-option-main">
+          <span class="export-option-label">Export new</span>
+          <span class="export-option-count" id="modal-new-count">{{ stats.shortlisted_count or 0 }}</span>
+        </div>
+        <p class="export-option-desc">Shortlisted frames not yet exported</p>
+      </button>
+
+      <button class="export-option" id="export-all-btn" type="button">
+        <div class="export-option-main">
+          <span class="export-option-label">Export all shortlisted</span>
+          <span class="export-option-count" id="modal-all-count">{{ (stats.shortlisted_count or 0) + (stats.exported_count or 0) }}</span>
+        </div>
+        <p class="export-option-desc">Includes previously exported frames</p>
+      </button>
+    </div>
+
+    <p class="export-modal-error" id="export-modal-error" hidden></p>
+
+    <button class="export-cancel" id="export-cancel" type="button">Cancel</button>
+  </div>
+</div>
+
+<!-- ───── TOAST ───── -->
+<div class="export-toast" id="export-toast" hidden role="status">
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <path d="M2 7l4 4 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <span id="export-toast-msg"></span>
 </div>
 
 <!-- ───── GRID ───── -->
@@ -166,12 +216,17 @@
   {% endfor %}
 </main>
 
-<script src="{{ url_for('static', filename='js/siftr.js') }}"></script>
 <script>
+  const SIFTR = {
+    marketCode:    '{{ market_code }}',
+    exportNewCount: {{ stats.shortlisted_count or 0 }},
+    exportAllCount: {{ (stats.shortlisted_count or 0) + (stats.exported_count or 0) }},
+  };
   function setShow(value) {
     document.getElementById('show-input').value = value;
     document.getElementById('filter-form').submit();
   }
 </script>
+<script src="{{ url_for('static', filename='js/siftr.js') }}"></script>
 </body>
 </html>
