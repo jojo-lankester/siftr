@@ -94,5 +94,9 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 - **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`.
 - **Browser input UI** (Step 8, after Step 7 export and Step 7.5 Playwright capture) — add markets, creators, and videos through the browser instead of editing `videos.yaml` by hand. Deferred deliberately: the priority is completing the core review-and-export loop first, so there's a working end-to-end tool to test in practice before adding convenience features.
   - Auto-discovery of top videos from a creator's channel (currently a later-stage feature) would integrate naturally into this input UI when built — selecting a creator could surface their top videos for the user to pick from.
+  - Auto-discovery implementation notes (for future review):
+    - Currently uses yt-dlp flat playlist scraping to find videos. YouTube Data API v3 is a possible upgrade if yt-dlp scraping becomes unreliable or rate-limited.
+    - The 18-month window and "top 3" video defaults are tunable (config-level changes). Expect Jack/team feedback to refine these once real channels are added.
+    - No edit or delete in the manage UI yet — add-only by design. To be revisited once Mat and the team have used it in practice and we know what "oops" scenarios actually come up.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.

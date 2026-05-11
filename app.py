@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import shutil
 import sqlite3
+import subprocess
+import sys
+import threading
+import uuid
+import yaml
 from datetime import datetime, timezone
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
@@ -13,7 +19,138 @@ DB_PATH = os.path.join(BASE_DIR, "database.sqlite")
 FRAMES_DIR = os.path.join(BASE_DIR, "frames")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 
+YAML_PATH   = os.path.join(BASE_DIR, "videos.yaml")
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
+KNOWN_MARKETS = ["AU", "BR", "DE", "EU", "FR", "ID", "IN", "JP", "UK", "US"]
+
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+
 app = Flask(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def _update_job(job_id: str, **kwargs) -> None:
+    with _jobs_lock:
+        if job_id in _jobs:
+            _jobs[job_id].update(kwargs)
+
+
+def _read_log_tail(n: int = 25) -> str:
+    log_path = os.path.join(BASE_DIR, "logs", "harvest.log")
+    try:
+        with open(log_path, encoding="utf-8") as f:
+            lines = f.readlines()
+        return "".join(lines[-n:]).strip()
+    except Exception:
+        return ""
+
+
+def discover_channel_videos(channel_url: str, max_videos: int = 3, months: int = 18) -> list[dict]:
+    """Use yt-dlp to fetch the top N most-viewed videos from a channel in the last 18 months."""
+    import yt_dlp
+    from datetime import datetime, timedelta
+
+    cutoff = datetime.now() - timedelta(days=int(months * 30.44))
+    ydl_opts = {
+        "extract_flat": True,
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "playlistend": 60,
+        "dateafter": cutoff.strftime("%Y%m%d"),
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(channel_url, download=False)
+
+    if not info or "entries" not in info:
+        raise ValueError("Could not find any videos for this channel. Check the URL and try again.")
+
+    entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
+    if not entries:
+        raise ValueError("No videos found in the last 18 months for this channel.")
+
+    entries.sort(key=lambda e: e.get("view_count") or 0, reverse=True)
+    top = entries[:max_videos]
+
+    return [
+        {
+            "url": f"https://www.youtube.com/watch?v={e['id']}",
+            "title": e.get("title", e["id"]),
+            "view_count": e.get("view_count"),
+        }
+        for e in top
+    ]
+
+
+def update_videos_yaml(market_code: str, creator_name: str, creator_slug: str,
+                        themes: list[str], video_urls: list[str]) -> None:
+    """Append a new creator+videos under market_code in videos.yaml. Non-destructive."""
+    with open(YAML_PATH, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    markets = data.setdefault("markets", [])
+    market_entry = next((m for m in markets if m.get("code") == market_code), None)
+    if not market_entry:
+        market_entry = {"code": market_code, "creators": []}
+        markets.append(market_entry)
+
+    market_entry.setdefault("creators", []).append({
+        "name": creator_name,
+        "creator_slug": creator_slug,
+        "default_themes": themes,
+        "videos": [{"url": u} for u in video_urls],
+    })
+
+    with open(YAML_PATH, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
+                          creator_slug: str, themes: list[str],
+                          input_method: str, channel_url: str, video_urls_raw: str) -> None:
+    try:
+        video_urls: list[str] = []
+        discovered: list[dict] = []
+
+        if input_method == "channel":
+            _update_job(job_id, phase="discovering", message="Discovering videos from channel…")
+            discovered = discover_channel_videos(channel_url)
+            video_urls = [v["url"] for v in discovered]
+            _update_job(job_id, discovered_videos=discovered)
+        else:
+            video_urls = [u.strip() for u in video_urls_raw.splitlines() if u.strip()]
+
+        if not video_urls:
+            _update_job(job_id, status="failed", error="No valid video URLs found.")
+            return
+
+        _update_job(job_id, phase="updating_yaml", message="Updating configuration…")
+        update_videos_yaml(market_code, creator_name, creator_slug, themes, video_urls)
+
+        _update_job(job_id, phase="harvesting",
+                    message=f"Harvesting {len(video_urls)} video(s) — this may take a few minutes…",
+                    video_count=len(video_urls))
+
+        subprocess.run(
+            [sys.executable, "harvest.py"],
+            capture_output=True, text=True,
+            cwd=BASE_DIR, timeout=3600,
+        )
+
+        _update_job(job_id,
+                    status="complete", phase="complete",
+                    message="Done",
+                    log_tail=_read_log_tail(),
+                    video_count=len(video_urls))
+
+    except Exception as exc:
+        _update_job(job_id, status="failed", error=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +561,86 @@ def export_market(market_code: str):
         "failed":       failed,
         "results":      results,
     })
+
+
+# ---------------------------------------------------------------------------
+# Manage page
+# ---------------------------------------------------------------------------
+
+@app.route("/manage")
+def manage():
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    themes = cfg.get("available_themes", ["cultural", "social", "economic"])
+
+    with open(YAML_PATH, encoding="utf-8") as f:
+        yaml_data = yaml.safe_load(f) or {}
+    markets_setup = yaml_data.get("markets", [])
+
+    return render_template(
+        "manage.html",
+        themes=themes,
+        markets_setup=markets_setup,
+        known_markets=KNOWN_MARKETS,
+    )
+
+
+@app.post("/api/manage/submit")
+def manage_submit():
+    data = request.get_json(silent=True) or {}
+
+    market_code    = data.get("market", "").strip().upper()
+    creator_name   = data.get("creator_name", "").strip()
+    creator_slug   = data.get("creator_slug", "").strip()
+    themes         = [t for t in data.get("themes", []) if t]
+    input_method   = data.get("input_method", "videos")
+    channel_url    = data.get("channel_url", "").strip()
+    video_urls_raw = data.get("video_urls", "").strip()
+
+    if not market_code:
+        return jsonify({"error": "Market is required."}), 400
+    if not creator_name:
+        return jsonify({"error": "Creator name is required."}), 400
+    if not creator_slug:
+        return jsonify({"error": "Creator slug is required."}), 400
+    if not re.match(r"^[a-z0-9_]+$", creator_slug):
+        return jsonify({"error": "Slug may only contain lowercase letters, numbers, and underscores."}), 400
+    if input_method == "channel" and not channel_url:
+        return jsonify({"error": "Channel URL is required."}), 400
+    if input_method == "videos" and not video_urls_raw:
+        return jsonify({"error": "At least one video URL is required."}), 400
+
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "running",
+            "phase": "starting",
+            "message": "Starting…",
+            "creator_name": creator_name,
+            "market_code": market_code,
+            "discovered_videos": [],
+            "video_count": 0,
+            "log_tail": "",
+            "error": None,
+        }
+
+    threading.Thread(
+        target=_run_add_creator_job,
+        args=(job_id, market_code, creator_name, creator_slug,
+              themes, input_method, channel_url, video_urls_raw),
+        daemon=True,
+    ).start()
+
+    return jsonify({"job_id": job_id})
+
+
+@app.get("/api/manage/job/<job_id>")
+def manage_job_status(job_id: str):
+    with _jobs_lock:
+        job = dict(_jobs.get(job_id, {}))
+    if not job:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(job)
 
 
 if __name__ == "__main__":

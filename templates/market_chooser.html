@@ -13,11 +13,17 @@
 
 <div class="chooser-wrap">
   <header class="chooser-header">
-    <div class="wordmark">SIFTR</div>
-    <div class="wordmark-sub">creator footage curator</div>
+    <div>
+      <div class="wordmark">SIFTR</div>
+      <div class="wordmark-sub">creator footage curator</div>
+    </div>
+    <a class="manage-nav-link" href="/manage">Manage</a>
   </header>
 
-  <h1 class="chooser-title">Select a market to review</h1>
+  <div class="chooser-title-row">
+    <h1 class="chooser-title">Select a market</h1>
+    <a class="chooser-add-btn" href="/manage">+ Add content</a>
+  </div>
 
   <div class="chooser-grid">
     {% for m in markets %}

@@ -1,20 +1,23 @@
 markets:
-  - code: UK
-    creators:
-      - name: Test Creator A
-        creator_slug: test_creator_a
-        default_themes: [cultural, social]
-        videos:
-          - url: https://youtu.be/b6kajtaCGoY?si=rg0gxgReiEXYWE71
-          - url: https://www.youtube.com/watch?v=f8Wz2dLqsmA
-          - url: https://youtu.be/h3AtfvoNgWg?si=rFCnVqcStOj-ip4z
-          - url: https://www.youtube.com/watch?v=ET-o_L-cQuY
-
-  - code: AU
-    creators:
-      - name: Test Creator B
-        creator_slug: test_creator_b
-        default_themes: [cultural, economic]
-        videos:
-          - url: https://www.youtube.com/watch?v=boGz13J7IYw
-          - url: https://www.youtube.com/watch?v=69AV3rhBj5c
+- code: UK
+  creators:
+  - name: Test Creator A
+    creator_slug: test_creator_a
+    default_themes:
+    - cultural
+    - social
+    videos:
+    - url: https://youtu.be/b6kajtaCGoY?si=rg0gxgReiEXYWE71
+    - url: https://www.youtube.com/watch?v=f8Wz2dLqsmA
+    - url: https://youtu.be/h3AtfvoNgWg?si=rFCnVqcStOj-ip4z
+    - url: https://www.youtube.com/watch?v=ET-o_L-cQuY
+- code: AU
+  creators:
+  - name: Test Creator B
+    creator_slug: test_creator_b
+    default_themes:
+    - cultural
+    - economic
+    videos:
+    - url: https://www.youtube.com/watch?v=boGz13J7IYw
+    - url: https://www.youtube.com/watch?v=69AV3rhBj5c

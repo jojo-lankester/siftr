@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SIFTR — Manage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/siftr.css') }}" />
+</head>
+<body class="manage-page">
+
+<header class="topbar">
+  <div class="topbar-brand">
+    <a href="{{ url_for('index') }}" style="text-decoration:none;color:inherit;">
+      <span class="wordmark">SIFTR</span>
+    </a>
+    <span class="wordmark-sub">creator footage curator</span>
+  </div>
+  <a class="manage-nav-link active" href="{{ url_for('manage') }}">Manage</a>
+</header>
+
+<div class="manage-wrap">
+
+  <!-- ── Left: form ── -->
+  <div class="manage-form-col">
+    <h1 class="manage-heading">Add a creator to a market</h1>
+
+    <div class="manage-form" id="manage-form">
+
+      <!-- Market -->
+      <div class="form-row">
+        <label class="form-label" for="market-select">Market</label>
+        <div class="form-field">
+          <select class="form-select" id="market-select">
+            <option value="">Select market…</option>
+            {% for m in known_markets %}
+            <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+            <option value="__new__">+ Add new market…</option>
+          </select>
+          <input class="form-input hidden" id="market-new" type="text"
+            placeholder="Market code (e.g. NZ)" maxlength="5" autocomplete="off" />
+        </div>
+      </div>
+
+      <!-- Creator name -->
+      <div class="form-row">
+        <label class="form-label" for="creator-name">Creator name</label>
+        <input class="form-input" id="creator-name" type="text"
+          placeholder="e.g. Jane Smith" autocomplete="off" />
+      </div>
+
+      <!-- Slug -->
+      <div class="form-row">
+        <label class="form-label" for="creator-slug">
+          Slug
+          <span class="form-hint">auto-generated, editable</span>
+        </label>
+        <input class="form-input form-input--mono" id="creator-slug" type="text"
+          placeholder="e.g. jane_smith" autocomplete="off" />
+      </div>
+
+      <!-- Themes -->
+      <div class="form-row">
+        <label class="form-label">Themes</label>
+        <div class="form-checkboxes">
+          {% for theme in themes %}
+          <label class="checkbox-label">
+            <input type="checkbox" class="theme-checkbox" value="{{ theme }}" />
+            {{ theme }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Input method -->
+      <div class="form-row">
+        <label class="form-label">Input method</label>
+        <div class="form-radios">
+          <label class="radio-label">
+            <input type="radio" name="input-method" value="channel" id="method-channel" />
+            Paste a channel URL
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="input-method" value="videos" id="method-videos" checked />
+            Paste video URLs
+          </label>
+        </div>
+      </div>
+
+      <!-- Channel URL -->
+      <div class="form-row" id="row-channel" style="display:none">
+        <label class="form-label" for="channel-url">Channel URL</label>
+        <input class="form-input" id="channel-url" type="url"
+          placeholder="https://youtube.com/@username" autocomplete="off" />
+        <p class="form-hint-block">Fetches the top 3 most-viewed videos from the last 18 months.</p>
+      </div>
+
+      <!-- Video URLs -->
+      <div class="form-row" id="row-videos">
+        <label class="form-label" for="video-urls">Video URLs</label>
+        <textarea class="form-textarea" id="video-urls" rows="4"
+          placeholder="https://youtube.com/watch?v=abc&#10;https://youtube.com/watch?v=xyz"></textarea>
+        <p class="form-hint-block">One URL per line.</p>
+      </div>
+
+      <!-- Error -->
+      <p class="form-error" id="form-error" hidden></p>
+
+      <!-- Submit -->
+      <div class="form-actions">
+        <a class="form-cancel" href="{{ url_for('index') }}">← Back</a>
+        <button class="go-sift-btn" id="go-sift-btn" type="button">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M7 1v8M4 6l3 3 3-3M2 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Go Sift
+        </button>
+      </div>
+
+    </div><!-- /manage-form -->
+
+    <!-- Progress UI -->
+    <div class="harvest-progress" id="harvest-progress" hidden>
+      <div class="harvest-spinner"></div>
+      <div class="harvest-progress-text">
+        <p class="harvest-phase" id="harvest-phase">Starting…</p>
+        <p class="harvest-message" id="harvest-message"></p>
+      </div>
+    </div>
+
+    <!-- Result UI -->
+    <div class="harvest-result" id="harvest-result" hidden>
+      <div class="result-icon">✓</div>
+      <div class="result-body">
+        <h2 class="result-heading" id="result-heading"></h2>
+        <div class="result-discovered" id="result-discovered" hidden>
+          <p class="result-subhead">Videos discovered:</p>
+          <ul class="result-video-list" id="result-video-list"></ul>
+        </div>
+        <p class="result-log" id="result-log"></p>
+        <a class="result-review-link" id="result-review-link" href="#">Review new frames →</a>
+      </div>
+    </div>
+
+    <!-- Error UI -->
+    <div class="harvest-error" id="harvest-error" hidden>
+      <div class="result-icon result-icon--fail">✗</div>
+      <div class="result-body">
+        <h2 class="result-heading">Something went wrong</h2>
+        <p class="harvest-error-msg" id="harvest-error-msg"></p>
+        <button class="form-cancel" id="error-retry-btn" type="button">← Try again</button>
+      </div>
+    </div>
+
+  </div><!-- /manage-form-col -->
+
+  <!-- ── Right: current setup ── -->
+  <div class="manage-setup-col">
+    <h2 class="setup-heading">Current setup</h2>
+    <div class="setup-content">
+      {% if markets_setup %}
+        {% for market in markets_setup %}
+        <div class="setup-market">
+          <div class="setup-market-code">{{ market.code }}</div>
+          {% for creator in market.creators %}
+          <div class="setup-creator">
+            <div class="setup-creator-name">{{ creator.name }}</div>
+            <ul class="setup-videos">
+              {% for video in creator.videos %}
+              <li class="setup-video mono">{{ video.url }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="setup-empty">No creators added yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div><!-- /manage-wrap -->
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Elements ──────────────────────────────────────────────────────────
+  const marketSelect  = document.getElementById("market-select");
+  const marketNew     = document.getElementById("market-new");
+  const creatorName   = document.getElementById("creator-name");
+  const creatorSlug   = document.getElementById("creator-slug");
+  const methodChannel = document.getElementById("method-channel");
+  const methodVideos  = document.getElementById("method-videos");
+  const rowChannel    = document.getElementById("row-channel");
+  const rowVideos     = document.getElementById("row-videos");
+  const channelUrl    = document.getElementById("channel-url");
+  const videoUrls     = document.getElementById("video-urls");
+  const formError     = document.getElementById("form-error");
+  const goSiftBtn     = document.getElementById("go-sift-btn");
+  const manageForm    = document.getElementById("manage-form");
+  const progressUI    = document.getElementById("harvest-progress");
+  const harvestPhase  = document.getElementById("harvest-phase");
+  const harvestMsg    = document.getElementById("harvest-message");
+  const resultUI      = document.getElementById("harvest-result");
+  const resultHeading = document.getElementById("result-heading");
+  const resultDisc    = document.getElementById("result-discovered");
+  const resultVidList = document.getElementById("result-video-list");
+  const resultLog     = document.getElementById("result-log");
+  const resultLink    = document.getElementById("result-review-link");
+  const errorUI       = document.getElementById("harvest-error");
+  const errorMsg      = document.getElementById("harvest-error-msg");
+  const retryBtn      = document.getElementById("error-retry-btn");
+
+  let slugEdited = false;
+
+  // ── Slug auto-generation ──────────────────────────────────────────────
+  function toSlug(name) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  }
+
+  creatorName.addEventListener("input", () => {
+    if (!slugEdited) creatorSlug.value = toSlug(creatorName.value);
+  });
+  creatorSlug.addEventListener("input", () => { slugEdited = true; });
+
+  // ── Market new-market toggle ─────────────────────────────────────────
+  marketSelect.addEventListener("change", () => {
+    if (marketSelect.value === "__new__") {
+      marketNew.classList.remove("hidden");
+      marketNew.focus();
+    } else {
+      marketNew.classList.add("hidden");
+    }
+  });
+
+  // ── Input method toggle ───────────────────────────────────────────────
+  function updateMethodUI() {
+    const isChannel = methodChannel.checked;
+    rowChannel.style.display = isChannel ? "" : "none";
+    rowVideos.style.display  = isChannel ? "none" : "";
+  }
+  methodChannel.addEventListener("change", updateMethodUI);
+  methodVideos.addEventListener("change", updateMethodUI);
+  updateMethodUI();
+
+  // ── Submit ────────────────────────────────────────────────────────────
+  goSiftBtn.addEventListener("click", async () => {
+    formError.hidden = true;
+
+    const market = marketSelect.value === "__new__"
+      ? marketNew.value.trim().toUpperCase()
+      : marketSelect.value;
+
+    const themes = [...document.querySelectorAll(".theme-checkbox:checked")].map(cb => cb.value);
+
+    const payload = {
+      market,
+      creator_name:  creatorName.value.trim(),
+      creator_slug:  creatorSlug.value.trim(),
+      themes,
+      input_method:  methodChannel.checked ? "channel" : "videos",
+      channel_url:   channelUrl.value.trim(),
+      video_urls:    videoUrls.value.trim(),
+    };
+
+    try {
+      const res = await fetch("/api/manage/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        formError.textContent = data.error || "Submission failed.";
+        formError.hidden = false;
+        return;
+      }
+      showProgress();
+      pollJob(data.job_id, market);
+    } catch (err) {
+      formError.textContent = err.message;
+      formError.hidden = false;
+    }
+  });
+
+  // ── Progress polling ──────────────────────────────────────────────────
+  const PHASE_LABELS = {
+    starting:       "Starting…",
+    discovering:    "Discovering videos from channel…",
+    updating_yaml:  "Updating configuration…",
+    harvesting:     "Running harvest pipeline…",
+    complete:       "Complete",
+  };
+
+  function showProgress() {
+    manageForm.hidden = true;
+    progressUI.hidden = false;
+    resultUI.hidden = true;
+    errorUI.hidden = true;
+  }
+
+  function pollJob(jobId, marketCode) {
+    const interval = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/manage/job/${jobId}`);
+        const job  = await res.json();
+
+        harvestPhase.textContent = PHASE_LABELS[job.phase] || job.phase;
+        harvestMsg.textContent   = job.message || "";
+
+        if (job.status === "complete") {
+          clearInterval(interval);
+          showResult(job, marketCode);
+        } else if (job.status === "failed") {
+          clearInterval(interval);
+          showError(job.error);
+        }
+      } catch (_) { /* network glitch — keep polling */ }
+    }, 2000);
+  }
+
+  function showResult(job, marketCode) {
+    progressUI.hidden = true;
+    resultUI.hidden = false;
+
+    resultHeading.textContent =
+      `Added ${job.creator_name} to ${job.market_code} — ${job.video_count} video(s) harvested`;
+
+    if (job.discovered_videos && job.discovered_videos.length > 0) {
+      resultDisc.hidden = false;
+      resultVidList.innerHTML = job.discovered_videos.map(v => {
+        const count = v.view_count ? ` · ${v.view_count.toLocaleString()} views` : "";
+        return `<li>${v.title}${count}</li>`;
+      }).join("");
+    }
+
+    if (job.log_tail) {
+      resultLog.textContent = job.log_tail;
+    }
+
+    resultLink.href = `/market/${encodeURIComponent(marketCode)}`;
+    resultLink.textContent = `Review ${marketCode} frames →`;
+  }
+
+  function showError(message) {
+    progressUI.hidden = true;
+    errorUI.hidden = false;
+    errorMsg.textContent = message || "An unknown error occurred.";
+  }
+
+  retryBtn.addEventListener("click", () => {
+    errorUI.hidden = true;
+    manageForm.hidden = false;
+  });
+})();
+</script>
+</body>
+</html>
