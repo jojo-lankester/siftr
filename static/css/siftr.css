@@ -3,6 +3,8 @@
 
 :root {
   --yellow: #d9ff00;
+  --green: #22c55e;
+  --red: #ef4444;
   --ink: #0a0a0a;
   --ink-mid: #444;
   --ink-light: #888;
@@ -273,8 +275,8 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 
 .filter-select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
 
-/* Three-way toggle */
-.toggle-three {
+/* Status toggle (5-way) */
+.status-toggle {
   display: flex;
   border: 1.5px solid var(--rule);
   margin-left: auto;
@@ -300,6 +302,11 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 .toggle-btn.active {
   background: var(--yellow);
   color: var(--ink);
+}
+
+.toggle-btn--failed.active {
+  background: var(--red);
+  color: #fff;
 }
 
 
@@ -354,7 +361,9 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   color: var(--ink-light);
 }
 
-.shortlisted-count { color: var(--ink); }
+.stat-shortlisted { color: var(--ink); }
+.stat-exported { color: var(--green); }
+.stat-failed { color: var(--red); }
 
 
 /* ── Theme chips ── */
@@ -459,30 +468,48 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 
 .frame:hover .frame-img { transform: scale(1.02); }
 
-/* Shortlist corner mark (yellow triangle, top-right) */
-.frame-shortlist-mark {
+/* State overlay — shared container for ✓ / ✗ icons */
+.frame-state-overlay {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 0 26px 26px 0;
-  border-color: transparent var(--yellow) transparent transparent;
-  opacity: 0;
-  transition: opacity 0.12s;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
-.frame.shortlisted .frame-shortlist-mark { opacity: 1; }
+.state-icon {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
 
-/* Yellow border on shortlisted */
-.frame.shortlisted .frame-img-wrap::after {
+/* ── Border overlay (shared) ── */
+.frame.shortlisted .frame-img-wrap::after,
+.frame.exported .frame-img-wrap::after,
+.frame.export-failed .frame-img-wrap::after {
   content: "";
   position: absolute;
   inset: 0;
-  border: 3px solid var(--yellow);
+  border: 3px solid transparent;
   pointer-events: none;
 }
+
+/* Shortlisted — yellow border, no icon */
+.frame.shortlisted .frame-img-wrap::after { border-color: var(--yellow); }
+
+/* Exported — green border + ✓ */
+.frame.exported .frame-img-wrap::after { border-color: var(--green); }
+.frame.exported .state-icon { color: var(--green); }
+
+/* Export failed — red border + ✗ */
+.frame.export-failed .frame-img-wrap::after { border-color: var(--red); }
+.frame.export-failed .state-icon { color: var(--red); }
+
+/* Exported frames: show pointer but indicate no toggle */
+.frame.exported { cursor: default; }
+.frame.exported:hover .frame-img { transform: none; }
 
 .frame-meta {
   font-size: 10px;

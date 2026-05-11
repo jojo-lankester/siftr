@@ -45,8 +45,53 @@ The market → creator → videos hierarchy in `videos.yaml` was chosen delibera
 
 ---
 
+## Export data model (added before Step 6)
+
+### Two-tier capture design
+
+Frames are captured at two different quality levels at different points in the workflow:
+
+1. **Low-res review copy** — extracted by `extract_frames.py` via FFmpeg at the resolution available from yt-dlp (currently 360p in dev, target 1080p in production). Stored in `frames/`. Used for review in the UI.
+2. **High-res export copy** — captured at export time only, via Playwright headless browser, navigating to the exact YouTube timecode and screenshotting at full resolution. Stored in `exports/`. This is the deliverable.
+
+The high-res capture is deferred until the designer has confirmed their shortlist, so we avoid spending time/bandwidth on frames that won't be used. Playwright is not built yet — the data model and UI are prepared here (Step 7.5 will build it).
+
+### Multi-round export workflow
+
+Export rounds allow designers to add new creators/videos to an existing market and run multiple export batches without losing track of which frames came from which round:
+
+- Each export run increments `export_round` on all frames it successfully captures.
+- Previously exported frames (earlier rounds) remain `exported` and are not re-captured.
+- New shortlisted frames from a new harvest run start as `shortlisted` and are picked up in the next export.
+- The harvest log line tells the designer what changed: "12 new videos · 847 new frames added. 34 previously shortlisted frames unchanged."
+
+### Four export states (frames.export_status)
+
+| State | Meaning | UI |
+|---|---|---|
+| `unreviewed` | Not yet reviewed by a designer | No border |
+| `shortlisted` | Shortlisted, pending high-res export | Yellow border |
+| `exported` | High-res export captured successfully | Green border + ✓ |
+| `export_failed` | Export attempted but failed (Playwright error, timecode out of range, etc.) | Red border + ✗, clickable to retry |
+
+**Retry behaviour**: clicking an `export_failed` frame re-queues it to `shortlisted`. The next export run will re-attempt it and either set it to `exported` or `export_failed` again with the new error message in `export_error`.
+
+**Exported frames are not re-togglable** via the grid click — only the export process can set/unset `exported`. This prevents accidental deselection of frames that have already been delivered.
+
+### DB columns added (pre-Step 6 migration)
+
+- `export_status TEXT` — canonical status field: unreviewed / shortlisted / exported / export_failed
+- `exported_at TEXT` — ISO timestamp of most recent successful export
+- `export_round INTEGER` — which export batch this frame was captured in
+- `export_error TEXT` — error message from last failed export attempt (null if none)
+
+The legacy `status` column (unreviewed / shortlisted) remains in the DB but is no longer read or written by the app.
+
+---
+
 ## Open features deferred from spec
 
+- **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **YouTube channel auto-discovery** (Step 8 in tech spec) — automatically surfacing top videos from a creator's channel rather than requiring manual URL entry.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.

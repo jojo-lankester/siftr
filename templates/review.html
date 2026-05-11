@@ -30,7 +30,15 @@
       <span class="stat-sep">·</span>
       <span>{{ stats.frame_count }} frame{{ 's' if stats.frame_count != 1 else '' }}</span>
       <span class="stat-sep">·</span>
-      <span>{{ stats.shortlisted_count or 0 }} shortlisted</span>
+      <span class="stat-shortlisted">{{ stats.shortlisted_count or 0 }} shortlisted</span>
+      {% if stats.exported_count and stats.exported_count > 0 %}
+      <span class="stat-sep">·</span>
+      <span class="stat-exported">{{ stats.exported_count }} exported</span>
+      {% endif %}
+      {% if stats.failed_count and stats.failed_count > 0 %}
+      <span class="stat-sep">·</span>
+      <span class="stat-failed">{{ stats.failed_count }} failed</span>
+      {% endif %}
     </p>
   </div>
 </div>
@@ -62,13 +70,17 @@
       </label>
     </div>
 
-    <div class="toggle-three" role="group" aria-label="Show filter">
+    <div class="status-toggle" role="group" aria-label="Show filter">
       <button type="button" class="toggle-btn {% if show == 'unreviewed' %}active{% endif %}"
-        data-value="unreviewed" onclick="setShow('unreviewed')">Unreviewed</button>
+        onclick="setShow('unreviewed')">Unreviewed</button>
       <button type="button" class="toggle-btn {% if show == 'all' %}active{% endif %}"
-        data-value="all" onclick="setShow('all')">All</button>
+        onclick="setShow('all')">All</button>
       <button type="button" class="toggle-btn {% if show == 'shortlisted' %}active{% endif %}"
-        data-value="shortlisted" onclick="setShow('shortlisted')">Shortlisted</button>
+        onclick="setShow('shortlisted')">Shortlisted</button>
+      <button type="button" class="toggle-btn {% if show == 'exported' %}active{% endif %}"
+        onclick="setShow('exported')">Exported</button>
+      <button type="button" class="toggle-btn toggle-btn--failed {% if show == 'failed' %}active{% endif %}"
+        onclick="setShow('failed')">Failed</button>
     </div>
   </form>
 </div>
@@ -95,7 +107,13 @@
           <span class="video-frame-count mono">
             {{ video.total_frames }} frame{{ 's' if video.total_frames != 1 else '' }}
             {% if video.shortlisted > 0 %}
-            <span class="shortlisted-count">· {{ video.shortlisted }} shortlisted</span>
+            <span class="stat-shortlisted">· {{ video.shortlisted }} shortlisted</span>
+            {% endif %}
+            {% if video.exported > 0 %}
+            <span class="stat-exported">· {{ video.exported }} exported</span>
+            {% endif %}
+            {% if video.failed > 0 %}
+            <span class="stat-failed">· {{ video.failed }} failed</span>
             {% endif %}
           </span>
         </div>
@@ -117,15 +135,19 @@
         {% set market_lower = parts[0] if parts|length > 0 else '' %}
         {% set creator_slug = parts[1] if parts|length > 1 else '' %}
         {% set img_url = url_for('serve_frame', market=market_lower, creator_slug=creator_slug, filename=frame.frame_id ~ '.jpg') %}
+        {% set es = frame.export_status %}
         <button
-          class="frame {% if frame.status == 'shortlisted' %}shortlisted{% endif %}"
+          class="frame {{ es | replace('_', '-') }}"
           data-frame-id="{{ frame.frame_id }}"
-          data-status="{{ frame.status }}"
-          aria-label="Frame at {{ frame.timecode }}, {% if frame.status == 'shortlisted' %}shortlisted{% else %}not shortlisted{% endif %}"
+          data-export-status="{{ es }}"
+          aria-label="Frame at {{ frame.timecode }}, {{ es | replace('_', ' ') }}"
         >
           <div class="frame-img-wrap">
             <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
-            <div class="frame-shortlist-mark" aria-hidden="true"></div>
+            <div class="frame-state-overlay" aria-hidden="true">
+              {% if es == 'exported' %}<span class="state-icon">✓</span>{% endif %}
+              {% if es == 'export_failed' %}<span class="state-icon">✗</span>{% endif %}
+            </div>
           </div>
           <div class="frame-meta mono">{{ frame.timecode }}</div>
         </button>
