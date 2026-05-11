@@ -358,9 +358,8 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 10px 40px;
-  background: #f4f4f5;
-  border-bottom: 1px solid #dddde1;
+  padding: 14px 40px 0;
+  background: var(--bg);
 }
 
 .export-btn {
