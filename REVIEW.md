@@ -92,6 +92,7 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 ## Open features deferred from spec
 
 - **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`.
+- **Browser input UI** (Step 8, after Step 7 export and Step 7.5 Playwright capture) — add markets, creators, and videos through the browser instead of editing `videos.yaml` by hand. Deferred deliberately: the priority is completing the core review-and-export loop first, so there's a working end-to-end tool to test in practice before adding convenience features.
+  - Auto-discovery of top videos from a creator's channel (currently a later-stage feature) would integrate naturally into this input UI when built — selecting a creator could surface their top videos for the user to pick from.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
-- **YouTube channel auto-discovery** (Step 8 in tech spec) — automatically surfacing top videos from a creator's channel rather than requiring manual URL entry.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.
