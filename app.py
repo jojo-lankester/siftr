@@ -119,7 +119,7 @@ def review(market_code: str):
     """, (market_code,)).fetchone()
 
     if not show:
-        show = "unreviewed" if (stats["unreviewed_count"] or 0) > 0 else "all"
+        show = "all"
 
     creators = [r["creator_name"] for r in conn.execute(
         "SELECT DISTINCT creator_name FROM videos WHERE market = ? ORDER BY creator_name",

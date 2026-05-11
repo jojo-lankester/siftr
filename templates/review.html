@@ -49,38 +49,44 @@
     <input type="hidden" name="show" id="show-input" value="{{ show }}" />
 
     <div class="filter-dropdowns">
-      <label class="filter-label">
-        Creator
-        <select name="creator" class="filter-select" onchange="this.form.submit()">
-          <option value="">All creators</option>
-          {% for c in creators %}
-          <option value="{{ c }}" {% if creator_filter == c %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-      </label>
+      <select name="creator" class="filter-select" onchange="this.form.submit()">
+        <option value="">All creators</option>
+        {% for c in creators %}
+        <option value="{{ c }}" {% if creator_filter == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
 
-      <label class="filter-label">
-        Theme
-        <select name="theme" class="filter-select" onchange="this.form.submit()">
-          <option value="">All themes</option>
-          {% for t in all_themes %}
-          <option value="{{ t }}" {% if theme_filter == t %}selected{% endif %}>{{ t }}</option>
-          {% endfor %}
-        </select>
-      </label>
+      <select name="theme" class="filter-select" onchange="this.form.submit()">
+        <option value="">All themes</option>
+        {% for t in all_themes %}
+        <option value="{{ t }}" {% if theme_filter == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
     </div>
 
-    <div class="status-toggle" role="group" aria-label="Show filter">
-      <button type="button" class="toggle-btn {% if show == 'unreviewed' %}active{% endif %}"
-        onclick="setShow('unreviewed')">Unreviewed</button>
-      <button type="button" class="toggle-btn {% if show == 'all' %}active{% endif %}"
-        onclick="setShow('all')">All</button>
-      <button type="button" class="toggle-btn {% if show == 'shortlisted' %}active{% endif %}"
-        onclick="setShow('shortlisted')">Shortlisted</button>
-      <button type="button" class="toggle-btn {% if show == 'exported' %}active{% endif %}"
-        onclick="setShow('exported')">Exported</button>
-      <button type="button" class="toggle-btn toggle-btn--failed {% if show == 'failed' %}active{% endif %}"
-        onclick="setShow('failed')">Failed</button>
+    <div class="status-filters" role="group" aria-label="Show filter">
+      <span class="status-label">STATUS</span>
+      <div class="status-panel">
+        <button type="button" class="status-opt {% if show == 'all' %}active{% endif %}" onclick="setShow('all')">
+          All{% if stats.frame_count %}<span class="status-count">{{ stats.frame_count }}</span>{% endif %}
+        </button>
+
+        <button type="button" class="status-opt {% if show == 'unreviewed' %}active{% endif %}" onclick="setShow('unreviewed')">
+          Unreviewed{% if stats.unreviewed_count %}<span class="status-count">{{ stats.unreviewed_count }}</span>{% endif %}
+        </button>
+
+        <button type="button" class="status-opt status-opt--shortlisted {% if show == 'shortlisted' %}active{% endif %}" onclick="setShow('shortlisted')">
+          Shortlisted{% if stats.shortlisted_count %}<span class="status-count">{{ stats.shortlisted_count }}</span>{% endif %}
+        </button>
+
+        <button type="button" class="status-opt status-opt--exported {% if show == 'exported' %}active{% endif %}" onclick="setShow('exported')">
+          Exported{% if stats.exported_count %}<span class="status-count">{{ stats.exported_count }}</span>{% endif %}
+        </button>
+
+        <button type="button" class="status-opt status-opt--failed {% if show == 'failed' %}active{% endif %}" onclick="setShow('failed')">
+          Failed{% if stats.failed_count %}<span class="status-count">{{ stats.failed_count }}</span>{% endif %}
+        </button>
+      </div>
     </div>
   </form>
 </div>
@@ -145,8 +151,8 @@
           <div class="frame-img-wrap">
             <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
             <div class="frame-state-overlay" aria-hidden="true">
-              {% if es == 'exported' %}<span class="state-icon">✓</span>{% endif %}
-              {% if es == 'export_failed' %}<span class="state-icon">✗</span>{% endif %}
+              {% if es == 'exported' %}<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>{% endif %}
+              {% if es == 'export_failed' %}<span class="frame-pill frame-pill--failed">✗ FAILED</span>{% endif %}
             </div>
           </div>
           <div class="frame-meta mono">{{ frame.timecode }}</div>

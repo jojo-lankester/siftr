@@ -228,8 +228,9 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   position: sticky;
   top: 52px;
   z-index: 90;
-  background: var(--bg);
-  border-bottom: 1px solid var(--rule);
+  background: #f4f4f5;
+  border-top: 1px solid #dddde1;
+  border-bottom: 1px solid #dddde1;
   padding: 0 40px;
   height: 52px;
   display: flex;
@@ -239,74 +240,113 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 .filter-bar form {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 10px;
   width: 100%;
 }
 
 .filter-dropdowns {
   display: flex;
-  gap: 16px;
-  align-items: center;
-}
-
-.filter-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-light);
-  display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
+/* Styled select dropdowns */
 .filter-select {
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  padding: 5px 10px;
+  background: #fff
+    url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E")
+    no-repeat right 9px center;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 5px 28px 5px 10px;
   cursor: pointer;
-  appearance: auto;
+  appearance: none;
 }
 
 .filter-select:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
 
-/* Status toggle (5-way) */
-.status-toggle {
+/* ── Status filters ── */
+.status-filters {
   display: flex;
-  border: 1.5px solid var(--rule);
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
 
-.toggle-btn {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 6px 16px;
-  color: var(--ink-light);
-  background: transparent;
-  border: none;
-  border-left: 1.5px solid var(--rule);
-  transition: background 0.12s, color 0.12s;
-  cursor: pointer;
+.status-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  user-select: none;
+  flex-shrink: 0;
 }
 
-.toggle-btn:first-child { border-left: none; }
+/* White container that wraps all the option buttons */
+.status-panel {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #dddde1;
+  border-radius: 7px;
+  padding: 4px;
+}
 
-.toggle-btn:hover { color: var(--ink); background: #f5f5f5; }
+.status-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
 
-.toggle-btn.active {
+.status-opt:hover:not(.active) { background: #f0f0f2; }
+
+/* Count badge */
+.status-count {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* Per-variant label + badge colours (inactive) */
+.status-opt--shortlisted              { color: var(--ink); }
+.status-opt--shortlisted .status-count { background: #e5e7eb; color: #374151; }
+
+.status-opt--exported                 { color: #16a34a; }
+.status-opt--exported .status-count   { background: #dcfce7; color: #15803d; }
+
+.status-opt--failed                   { color: #dc2626; }
+.status-opt--failed .status-count     { background: #fee2e2; color: #b91c1c; }
+
+/* Active: yellow highlight wrapping label + badge */
+.status-opt.active {
   background: var(--yellow);
   color: var(--ink);
 }
 
-.toggle-btn--failed.active {
-  background: var(--red);
-  color: #fff;
+/* Badge inside active option: slightly darker yellow so it reads as distinct */
+.status-opt.active .status-count {
+  background: rgba(0, 0, 0, 0.14);
+  color: var(--ink);
 }
 
 
@@ -468,48 +508,66 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 
 .frame:hover .frame-img { transform: scale(1.02); }
 
-/* State overlay — shared container for ✓ / ✗ icons */
+/* Pill overlay — anchored top-right, pointer-events off */
 .frame-state-overlay {
   position: absolute;
-  inset: 0;
-  display: flex;
+  top: 7px;
+  right: 7px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.frame-pill {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 3px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 100px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.frame-pill--exported { background: var(--green); color: #fff; }
+.frame-pill--failed   { background: var(--red);   color: #fff; }
+
+/* ── Shortlisted: yellow corner triangle + border ── */
+.frame.shortlisted .frame-img-wrap::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 28px 28px 0;
+  border-color: transparent var(--yellow) transparent transparent;
+  z-index: 2;
   pointer-events: none;
 }
 
-.state-icon {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.25);
-}
-
-/* ── Border overlay (shared) ── */
-.frame.shortlisted .frame-img-wrap::after,
-.frame.exported .frame-img-wrap::after,
-.frame.export-failed .frame-img-wrap::after {
+.frame.shortlisted .frame-img-wrap::after {
   content: "";
   position: absolute;
   inset: 0;
-  border: 3px solid transparent;
+  border: 3px solid var(--yellow);
   pointer-events: none;
 }
 
-/* Shortlisted — yellow border, no icon */
-.frame.shortlisted .frame-img-wrap::after { border-color: var(--yellow); }
+/* ── Exported: de-emphasised at rest, full on hover ── */
+.frame.exported .frame-img {
+  opacity: 0.35;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
 
-/* Exported — green border + ✓ */
-.frame.exported .frame-img-wrap::after { border-color: var(--green); }
-.frame.exported .state-icon { color: var(--green); }
-
-/* Export failed — red border + ✗ */
-.frame.export-failed .frame-img-wrap::after { border-color: var(--red); }
-.frame.export-failed .state-icon { color: var(--red); }
-
-/* Exported frames: show pointer but indicate no toggle */
-.frame.exported { cursor: default; }
-.frame.exported:hover .frame-img { transform: none; }
+.frame.exported:hover .frame-img {
+  opacity: 1;
+  transform: scale(1.02);
+}
 
 .frame-meta {
   font-size: 10px;
