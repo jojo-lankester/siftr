@@ -96,6 +96,8 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
   - Auto-discovery of top videos from a creator's channel (currently a later-stage feature) would integrate naturally into this input UI when built — selecting a creator could surface their top videos for the user to pick from.
   - Auto-discovery implementation notes (for future review):
     - Currently uses yt-dlp flat playlist scraping to find videos. YouTube Data API v3 is a possible upgrade if yt-dlp scraping becomes unreliable or rate-limited.
+    - **`view_count` is always null with `extract_flat=True`** — the "top 3 most-viewed" sort is a no-op in practice; videos are returned in YouTube's default channel order. To sort by view count we'd need individual video lookups (slower) or the YouTube Data API. Revisit once we know if channel ordering is good enough.
+    - Channel URL must point to the `/videos` tab (e.g. `@username/videos`) — the channel root returns tab entries, not videos. The form placeholder and hint now make this explicit.
     - The 18-month window and "top 3" video defaults are tunable (config-level changes). Expect Jack/team feedback to refine these once real channels are added.
     - No edit or delete in the manage UI yet — add-only by design. To be revisited once Mat and the team have used it in practice and we know what "oops" scenarios actually come up.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.

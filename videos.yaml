@@ -21,3 +21,17 @@ markets:
     videos:
     - url: https://www.youtube.com/watch?v=boGz13J7IYw
     - url: https://www.youtube.com/watch?v=69AV3rhBj5c
+  - name: Brandon B
+    creator_slug: brandon_b
+    default_themes: []
+    videos:
+    - url: https://www.youtube.com/watch?v=HBNndMmRLr8
+    - url: https://www.youtube.com/watch?v=3EeRsC0kmSk
+    - url: https://www.youtube.com/watch?v=zwkikyEO7ys
+  - name: Wall of Entertainment
+    creator_slug: wall_of_entertainment
+    default_themes: []
+    videos:
+    - url: https://www.youtube.com/watch?v=9churbvp4Q0
+    - url: https://www.youtube.com/watch?v=P7jUjrhf1tQ
+    - url: https://www.youtube.com/watch?v=3l8Gj6eOy3k
