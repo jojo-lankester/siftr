@@ -35,12 +35,18 @@ The creators in `videos.yaml` (`Test Creator A`, `Test Creator B`) are placehold
    sudo apt install ffmpeg
    ```
 
-4. (Optional) Run the harvester to download and extract frames from the videos in `videos.yaml`:
+4. Initialise the database:
+   ```bash
+   python setup.py
+   ```
+   This creates `database.sqlite` with the full schema. Safe to run multiple times.
+
+5. Run the harvester to download and extract frames from the videos in `videos.yaml`:
    ```bash
    python harvest.py
    ```
 
-5. Start the app:
+6. Start the app:
    ```bash
    python app.py
    ```

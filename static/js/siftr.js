@@ -3,6 +3,30 @@
 // ── Export-status state classes ───────────────────────────────────────────────
 const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"];
 
+// Maps an export_status value to its status-bar data-show-val
+function statusToShowVal(exportStatus) {
+  return exportStatus === "export_failed" ? "failed" : exportStatus;
+}
+
+// Increment or decrement a status-bar count badge (creates/removes as needed)
+function nudgeCount(showVal, delta) {
+  const btn = document.querySelector(`[data-show-val="${showVal}"]`);
+  if (!btn) return;
+  let span = btn.querySelector(".status-count");
+  const current = span ? parseInt(span.textContent, 10) : 0;
+  const next    = Math.max(0, current + delta);
+  if (next > 0) {
+    if (!span) {
+      span = document.createElement("span");
+      span.className = "status-count";
+      btn.appendChild(span);
+    }
+    span.textContent = next;
+  } else if (span) {
+    span.remove();
+  }
+}
+
 // ── Export flow ───────────────────────────────────────────────────────────────
 
 (function initExport() {
@@ -235,24 +259,6 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
     nudgeCount("failed",      +failed);
   }
 
-  function nudgeCount(showVal, delta) {
-    const btn = document.querySelector(`[data-show-val="${showVal}"]`);
-    if (!btn) return;
-    let span = btn.querySelector(".status-count");
-    const current = span ? parseInt(span.textContent, 10) : 0;
-    const next    = Math.max(0, current + delta);
-    if (next > 0) {
-      if (!span) {
-        span = document.createElement("span");
-        span.className = "status-count";
-        btn.appendChild(span);
-      }
-      span.textContent = next;
-    } else if (span) {
-      span.remove();
-    }
-  }
-
   function showToast(data) {
     const fWord = (data.exported ?? 0) === 1 ? "frame" : "frames";
     let msg = `${data.exported ?? 0} ${fWord} exported`;
@@ -304,6 +310,10 @@ document.querySelectorAll(".frame").forEach((btn) => {
     }
 
     updateVideoStats(btn);
+
+    // Keep status-bar count badges in sync
+    nudgeCount(statusToShowVal(exportStatus), -1);
+    nudgeCount(statusToShowVal(newStatus),    +1);
   });
 });
 
