@@ -923,6 +923,7 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
       sec.style.display = hasVis ? "" : "none";
     });
 
+    videoFilterBanner.hidden = true;
     nearbyDesc.textContent = ` Frames around ${timecode} ±5s · ${videoTitle}`;
     nearbyBanner.hidden = false;
     if (navPanel) navPanel.style.display = "none";
@@ -950,6 +951,7 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
       sec.style.display = hasVis ? "" : "none";
     });
 
+    nearbyBanner.hidden = true;
     videoFilterDesc.textContent = ` · ${videoTitle} · ${creatorName}`;
     videoFilterBanner.hidden = false;
     if (navPanel) navPanel.style.display = "none";
