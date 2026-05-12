@@ -125,6 +125,34 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 - **Manage page two-mode flow** — the form has an explicit toggle: "Add new creator" (default) and "Add videos to existing creator". Switching modes preserves the market selection. "New creator" mode validates that the slug is unique in that market and errors with a helpful redirect hint if not. "Existing creator" mode appends new URLs and skips duplicates (idempotent). A startup migration (`_merge_yaml_duplicates`) merges any creators that share a slug in the same market, preserving the avatar from whichever entry has one.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.
+- **Batch delete** — no mechanism yet for "delete all unreviewed videos from creator X". Could be useful if a creator turns out to be unsuitable after a large harvest. Deferred until the team has enough real-world data to know whether the scenario comes up.
+
+---
+
+## Video deletion (hard delete)
+
+### Decision: hard delete only
+
+Soft-delete (flagging videos as hidden rather than removing them) was considered and deliberately rejected. Reasons:
+- The primary use case is removing unsuitable videos to free up UI space and disk. A soft-deleted video that's still on disk provides no disk hygiene benefit.
+- The data model has no concept of "archived" or "hidden" status for videos.
+- Soft-delete would require audit logic, UI to show/restore hidden videos, and an eventual purge step. That's three features where one suffices.
+- If a video is accidentally deleted and needs to come back, re-adding the URL and re-running harvest is a full recovery.
+
+### Block rule: shortlisted, exported, or failed frames prevent deletion
+
+Any frame with status `shortlisted`, `exported`, or `export_failed` blocks the delete. The UI shows the count of each and tells the designer to un-shortlist before proceeding. Rationale:
+- `exported` frames represent delivered work — deleting the video would delete frames that may already be in the client's hands.
+- `shortlisted` frames represent a designer's curation decision. Accidental deletion would silently discard that work.
+- `export_failed` frames are waiting for a retry — deleting them would lose the retry queue.
+
+### Operation order for safety
+
+YAML is updated first. If YAML update fails, the delete is aborted (DB and files are untouched). DB deletion follows, then file deletion (best-effort — orphaned files from a failed file delete are not ideal but not critical). This order means the "worst" partial failure state is: YAML is clean but some orphaned frame files remain on disk. No user-visible data is lost.
+
+### Items to review
+
+- **No undo**: deletion is immediate and permanent. Worth confirming with Mat and the team whether a short grace window (e.g. "deleted — restore?" with a 10s timer) would be valuable, or whether the confirmation dialog is sufficient protection.
 
 ---
 

@@ -291,6 +291,27 @@ def update_videos_yaml(market_code: str, creator_name: str, creator_slug: str,
             yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
+def _remove_video_from_yaml(video_url: str) -> None:
+    """Remove a single video URL from videos.yaml (no-op if URL not found)."""
+    with _yaml_lock:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        changed = False
+        for market in data.get("markets", []):
+            for creator in market.get("creators", []):
+                videos = creator.get("videos", [])
+                filtered = [v for v in videos if v.get("url") != video_url]
+                if len(filtered) < len(videos):
+                    creator["videos"] = filtered
+                    changed = True
+
+        if changed:
+            with open(YAML_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False,
+                          sort_keys=False, allow_unicode=True)
+
+
 def append_videos_to_creator(market_code: str, creator_slug: str,
                               new_urls: list[str]) -> tuple[int, str]:
     """
@@ -1239,6 +1260,88 @@ def cancel_export_job(job_id: str):
 
 
 # ---------------------------------------------------------------------------
+# API: delete video
+# ---------------------------------------------------------------------------
+
+@app.delete("/api/video/<video_id>")
+def delete_video(video_id: str):
+    conn = get_db()
+
+    video = conn.execute(
+        "SELECT video_id, video_url, video_title, market, creator_slug FROM videos WHERE video_id = ?",
+        (video_id,),
+    ).fetchone()
+    if not video:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    counts = conn.execute("""
+        SELECT
+            SUM(CASE WHEN export_status = 'shortlisted'   THEN 1 ELSE 0 END) AS shortlisted,
+            SUM(CASE WHEN export_status = 'exported'      THEN 1 ELSE 0 END) AS exported,
+            SUM(CASE WHEN export_status = 'export_failed' THEN 1 ELSE 0 END) AS failed
+        FROM frames WHERE video_id = ?
+    """, (video_id,)).fetchone()
+
+    n_shortlisted = counts["shortlisted"] or 0
+    n_exported    = counts["exported"]    or 0
+    n_failed      = counts["failed"]      or 0
+
+    if n_shortlisted or n_exported or n_failed:
+        conn.close()
+        return jsonify({
+            "error":       "blocked",
+            "shortlisted": n_shortlisted,
+            "exported":    n_exported,
+            "failed":      n_failed,
+        }), 409
+
+    frame_ids = [r["frame_id"] for r in conn.execute(
+        "SELECT frame_id FROM frames WHERE video_id = ?", (video_id,)
+    ).fetchall()]
+
+    market       = video["market"].lower()
+    creator_slug = video["creator_slug"]
+    video_url    = video["video_url"]
+    video_title  = video["video_title"]
+
+    # Update YAML first — if this fails, nothing is deleted
+    try:
+        _remove_video_from_yaml(video_url)
+    except Exception as exc:
+        conn.close()
+        return jsonify({"error": f"Failed to update configuration: {exc}"}), 500
+
+    # Remove DB records
+    conn.execute("DELETE FROM frames WHERE video_id = ?", (video_id,))
+    conn.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
+    conn.commit()
+    conn.close()
+
+    # Delete extracted frame images (best-effort)
+    frame_dir = os.path.join(FRAMES_DIR, market, creator_slug)
+    for fid in frame_ids:
+        try:
+            p = os.path.join(frame_dir, f"{fid}.jpg")
+            if os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+
+    # Delete source video file (best-effort, any extension)
+    raw_dir = os.path.join(FRAMES_DIR, "_raw_downloads")
+    for ext in ("mp4", "webm", "mkv"):
+        p = os.path.join(raw_dir, f"{video_id}.{ext}")
+        try:
+            if os.path.isfile(p):
+                os.remove(p)
+        except OSError:
+            pass
+
+    return jsonify({"ok": True, "video_title": video_title})
+
+
+# ---------------------------------------------------------------------------
 # Manage page
 # ---------------------------------------------------------------------------
 
@@ -1262,11 +1365,12 @@ def manage():
 
     conn = get_db()
     rows = conn.execute(
-        "SELECT video_url, video_title FROM videos"
+        "SELECT video_url, video_title, video_id FROM videos"
         " WHERE video_url IS NOT NULL AND video_title IS NOT NULL AND video_title != ''"
     ).fetchall()
     conn.close()
-    url_to_title = {r["video_url"]: r["video_title"] for r in rows}
+    url_to_title   = {r["video_url"]: r["video_title"] for r in rows}
+    url_to_videoid = {r["video_url"]: r["video_id"]    for r in rows}
 
     return render_template(
         "manage.html",
@@ -1275,6 +1379,7 @@ def manage():
         known_markets=KNOWN_MARKETS,
         creators_by_market=creators_by_market,
         url_to_title=url_to_title,
+        url_to_videoid=url_to_videoid,
     )
 
 

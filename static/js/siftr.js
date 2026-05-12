@@ -970,3 +970,148 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
     window.location.href = url.toString();
   });
 }());
+
+
+// ── Delete video ──────────────────────────────────────────────────────────────
+
+(function initDeleteVideo() {
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  let overlayEl = null;
+  let toastEl   = null;
+
+  function getOverlay() {
+    if (!overlayEl) {
+      overlayEl = document.createElement("div");
+      overlayEl.className = "siftr-dialog-overlay";
+      document.body.appendChild(overlayEl);
+    }
+    return overlayEl;
+  }
+
+  function getToast() {
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.className = "siftr-toast";
+      toastEl.setAttribute("role", "status");
+      toastEl.setAttribute("aria-live", "polite");
+      document.body.appendChild(toastEl);
+    }
+    return toastEl;
+  }
+
+  function showDeleteToast(msg) {
+    const t = getToast();
+    t.textContent = msg;
+    t.classList.add("is-visible");
+    setTimeout(() => t.classList.remove("is-visible"), 2800);
+  }
+
+  function openDialog(html) {
+    const overlay = getOverlay();
+    overlay.innerHTML = `<div class="siftr-dialog">${html}</div>`;
+    overlay.style.display = "flex";
+    return overlay;
+  }
+
+  function closeDialog() {
+    const overlay = getOverlay();
+    overlay.style.display = "none";
+  }
+
+  function showAlert(title, body) {
+    return new Promise(resolve => {
+      const overlay = openDialog(`
+        <p class="siftr-dialog-title">${escHtml(title)}</p>
+        <p class="siftr-dialog-body">${escHtml(body)}</p>
+        <div class="siftr-dialog-actions">
+          <button class="siftr-dialog-btn siftr-dialog-btn--ok" type="button">OK</button>
+        </div>
+      `);
+      const ok = overlay.querySelector(".siftr-dialog-btn--ok");
+      ok.focus();
+      ok.addEventListener("click", () => { closeDialog(); resolve(); });
+    });
+  }
+
+  function showConfirm(title, body) {
+    return new Promise(resolve => {
+      const overlay = openDialog(`
+        <p class="siftr-dialog-title">${escHtml(title)}</p>
+        <p class="siftr-dialog-body">${escHtml(body)}</p>
+        <div class="siftr-dialog-actions">
+          <button class="siftr-dialog-btn siftr-dialog-btn--cancel" type="button">Cancel</button>
+          <button class="siftr-dialog-btn siftr-dialog-btn--delete" type="button">Delete video</button>
+        </div>
+      `);
+
+      const cancelBtn = overlay.querySelector(".siftr-dialog-btn--cancel");
+      const deleteBtn = overlay.querySelector(".siftr-dialog-btn--delete");
+
+      cancelBtn.focus();
+      cancelBtn.addEventListener("click", () => { closeDialog(); resolve(false); });
+      deleteBtn.addEventListener("click", () => { closeDialog(); resolve(true); });
+
+      function onKey(e) {
+        if (e.key === "Escape") {
+          document.removeEventListener("keydown", onKey, { capture: true });
+          closeDialog();
+          resolve(false);
+        }
+      }
+      document.addEventListener("keydown", onKey, { capture: true });
+    });
+  }
+
+  document.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".video-delete-btn");
+    if (!btn) return;
+
+    const videoId    = btn.dataset.videoId;
+    const videoTitle = btn.dataset.videoTitle;
+
+    const confirmed = await showConfirm(
+      `Delete '${videoTitle}'?`,
+      "This will permanently remove the video, all its extracted frames, and all source files. This cannot be undone."
+    );
+    if (!confirmed) return;
+
+    let res, data;
+    try {
+      res  = await fetch(`/api/video/${encodeURIComponent(videoId)}`, { method: "DELETE" });
+      data = await res.json();
+    } catch (err) {
+      await showAlert("Delete failed", "Network error — please try again.");
+      return;
+    }
+
+    if (res.status === 409) {
+      const parts = [];
+      if (data.shortlisted) parts.push(`${data.shortlisted} shortlisted`);
+      if (data.exported)    parts.push(`${data.exported} exported`);
+      if (data.failed)      parts.push(`${data.failed} failed`);
+      await showAlert(
+        `Can't delete '${videoTitle}' yet`,
+        `It has ${parts.join(", ")} frame(s). Please remove these from the shortlist first, then try again.`
+      );
+      return;
+    }
+
+    if (!res.ok) {
+      await showAlert("Delete failed", data.error || `Server error ${res.status}`);
+      return;
+    }
+
+    // Remove from DOM — works on review page (.video-block) and manage page (li)
+    const target = btn.closest(".video-block") || btn.closest("li");
+    if (target) target.remove();
+
+    showDeleteToast(`Deleted '${videoTitle}'`);
+  });
+}());
