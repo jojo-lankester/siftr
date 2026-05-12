@@ -404,3 +404,35 @@ document.querySelectorAll(".video-themes").forEach((container) => {
 
   addInput.addEventListener("blur", commitInput);
 });
+
+
+// ── Creator collapse ──────────────────────────────────────────────────────────
+
+document.querySelectorAll(".creator-toggle").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const section        = btn.closest(".creator-section");
+    const body           = document.getElementById(btn.getAttribute("aria-controls"));
+    const collapsedStats = section.querySelector(".creator-collapsed-stats");
+    const isOpen         = btn.getAttribute("aria-expanded") === "true";
+
+    btn.setAttribute("aria-expanded", String(!isOpen));
+    if (body) body.hidden = isOpen;
+    if (collapsedStats) collapsedStats.hidden = !isOpen;
+  });
+});
+
+
+// ── Back to top ───────────────────────────────────────────────────────────────
+
+(function initBackToTop() {
+  const btn = document.getElementById("back-to-top");
+  if (!btn) return;
+
+  window.addEventListener("scroll", () => {
+    btn.hidden = window.scrollY < 200;
+  }, { passive: true });
+
+  btn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}());

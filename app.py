@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 import yaml
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import Flask, abort, jsonify, render_template, request, send_file, url_for
 
@@ -293,6 +293,21 @@ def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
         _update_job(job_id, status="failed", error=str(exc))
 
 
+_NEW_THRESHOLD_HOURS = 24
+
+
+def _is_new(date_added: str | None) -> bool:
+    if not date_added:
+        return False
+    try:
+        dt = datetime.fromisoformat(date_added)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt) < timedelta(hours=_NEW_THRESHOLD_HOURS)
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # DB migration — runs on startup, idempotent
 # ---------------------------------------------------------------------------
@@ -423,7 +438,7 @@ def review(market_code: str):
     video_rows = conn.execute(f"""
         SELECT
             v.video_id, v.video_title, v.creator_name, v.creator_slug,
-            v.themes, v.market,
+            v.themes, v.market, v.date_added,
             COUNT(f.frame_id)                                                    AS total_frames,
             SUM(CASE WHEN f.export_status = 'unreviewed'    THEN 1 ELSE 0 END)  AS unreviewed,
             SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted,
@@ -434,12 +449,11 @@ def review(market_code: str):
         WHERE v.market = ?
         {creator_clause}
         GROUP BY v.video_id
-        ORDER BY v.creator_name, v.date_added
     """, [market_code] + creator_params).fetchall()
 
-    groups: list[dict] = []
-    current_creator = None
-    creator_block: dict | None = None
+    # Collect videos into per-creator buckets (maintaining insertion order for
+    # later sort); also track each creator's min date_added for group ordering.
+    by_creator: dict[str, dict] = {}
 
     for vrow in video_rows:
         video_id = vrow["video_id"]
@@ -458,6 +472,7 @@ def review(market_code: str):
         if not frames and show != "all":
             continue
 
+        date_added = vrow["date_added"] or ""
         video = {
             "video_id": video_id,
             "video_title": vrow["video_title"],
@@ -470,14 +485,31 @@ def review(market_code: str):
             "exported": vrow["exported"] or 0,
             "failed": vrow["failed"] or 0,
             "frames": [dict(f) for f in frames],
+            "date_added": date_added,
+            "is_new": _is_new(date_added),
         }
 
-        if vrow["creator_name"] != current_creator:
-            current_creator = vrow["creator_name"]
-            creator_block = {"creator_name": current_creator, "videos": []}
-            groups.append(creator_block)
+        cn = vrow["creator_name"]
+        if cn not in by_creator:
+            by_creator[cn] = {"creator_name": cn, "videos": [], "min_date": date_added}
+        else:
+            if date_added and (not by_creator[cn]["min_date"] or date_added < by_creator[cn]["min_date"]):
+                by_creator[cn]["min_date"] = date_added
+        by_creator[cn]["videos"].append(video)
 
-        creator_block["videos"].append(video)
+    # Sort creators by min date_added DESC (most recently added creator first),
+    # and videos within each creator by date_added DESC.
+    groups: list[dict] = []
+    for creator_data in sorted(by_creator.values(), key=lambda c: c["min_date"], reverse=True):
+        videos = sorted(creator_data["videos"], key=lambda v: v["date_added"], reverse=True)
+        groups.append({
+            "creator_name": creator_data["creator_name"],
+            "videos": videos,
+            "is_new": any(v["is_new"] for v in videos),
+            "total_shortlisted": sum(v["shortlisted"] for v in videos),
+            "total_exported": sum(v["exported"] for v in videos),
+            "total_failed": sum(v["failed"] for v in videos),
+        })
 
     conn.close()
     return render_template(

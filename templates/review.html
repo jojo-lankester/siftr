@@ -11,88 +11,93 @@
 </head>
 <body class="review-page">
 
-<!-- ───── TOP BAR ───── -->
-<header class="topbar">
-  <div class="topbar-brand">
-    <span class="wordmark">SIFTR</span>
-    <span class="wordmark-sub">creator footage curator</span>
-  </div>
-  <div class="topbar-actions">
-    <a class="manage-nav-link" href="{{ url_for('manage') }}">Manage</a>
-    <a class="switch-market-link" href="{{ url_for('index') }}">Switch market</a>
-  </div>
-</header>
+<!-- ───── STICKY PAGE HEADER ───── -->
+<div class="page-header-sticky">
 
-<!-- ───── MARKET HEADER ───── -->
-<div class="market-header">
-  <div class="market-header-inner">
-    <p class="market-label">REVIEWING MARKET</p>
-    <h1 class="market-code">{{ market_code }}</h1>
-    <p class="market-stats">
-      <span>{{ stats.video_count }} video{{ 's' if stats.video_count != 1 else '' }}</span>
-      <span class="stat-sep">·</span>
-      <span>{{ stats.frame_count }} frame{{ 's' if stats.frame_count != 1 else '' }}</span>
-      <span class="stat-sep">·</span>
-      <span class="stat-shortlisted">{{ stats.shortlisted_count or 0 }} shortlisted</span>
-      {% if stats.exported_count and stats.exported_count > 0 %}
-      <span class="stat-sep">·</span>
-      <span class="stat-exported">{{ stats.exported_count }} exported</span>
-      {% endif %}
-      {% if stats.failed_count and stats.failed_count > 0 %}
-      <span class="stat-sep">·</span>
-      <span class="stat-failed">{{ stats.failed_count }} failed</span>
-      {% endif %}
-    </p>
-  </div>
-</div>
-
-<!-- ───── FILTER BAR ───── -->
-<div class="filter-bar">
-  <form id="filter-form" method="get" action="{{ url_for('review', market_code=market_code) }}">
-    <input type="hidden" name="show" id="show-input" value="{{ show }}" />
-
-    <div class="filter-dropdowns">
-      <select name="creator" class="filter-select" onchange="this.form.submit()">
-        <option value="">All creators</option>
-        {% for c in creators %}
-        <option value="{{ c }}" {% if creator_filter == c %}selected{% endif %}>{{ c }}</option>
-        {% endfor %}
-      </select>
-
-      <select name="theme" class="filter-select" onchange="this.form.submit()">
-        <option value="">All themes</option>
-        {% for t in all_themes %}
-        <option value="{{ t }}" {% if theme_filter == t %}selected{% endif %}>{{ t }}</option>
-        {% endfor %}
-      </select>
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <span class="wordmark">SIFTR</span>
+      <span class="wordmark-sub">creator footage curator</span>
     </div>
+    <div class="topbar-actions">
+      <a class="manage-nav-link" href="{{ url_for('manage') }}">Manage</a>
+      <a class="switch-market-link" href="{{ url_for('index') }}">Switch market</a>
+    </div>
+  </header>
 
-    <div class="status-filters" role="group" aria-label="Show filter">
-      <span class="status-label">STATUS</span>
-      <div class="status-panel">
-        <button type="button" data-show-val="all" class="status-opt {% if show == 'all' %}active{% endif %}" onclick="setShow('all')">
-          All{% if stats.frame_count %}<span class="status-count">{{ stats.frame_count }}</span>{% endif %}
-        </button>
+  <!-- COMPRESSED MARKET HEADER -->
+  <div class="market-header">
+    <div class="market-header-inner">
+      <h1 class="market-code">{{ market_code }}</h1>
+      <span class="stat-sep">·</span>
+      <span class="market-stat">{{ stats.video_count }} video{{ 's' if stats.video_count != 1 else '' }}</span>
+      <span class="stat-sep">·</span>
+      <span class="market-stat">{{ stats.frame_count }} frame{{ 's' if stats.frame_count != 1 else '' }}</span>
+      {% if stats.shortlisted_count %}
+      <span class="stat-sep">·</span>
+      <span class="market-stat stat-shortlisted">{{ stats.shortlisted_count }} shortlisted</span>
+      {% endif %}
+      {% if stats.exported_count %}
+      <span class="stat-sep">·</span>
+      <span class="market-stat stat-exported">{{ stats.exported_count }} exported</span>
+      {% endif %}
+      {% if stats.failed_count %}
+      <span class="stat-sep">·</span>
+      <span class="market-stat stat-failed">{{ stats.failed_count }} failed</span>
+      {% endif %}
+    </div>
+  </div>
 
-        <button type="button" data-show-val="unreviewed" class="status-opt {% if show == 'unreviewed' %}active{% endif %}" onclick="setShow('unreviewed')">
-          Unreviewed{% if stats.unreviewed_count %}<span class="status-count">{{ stats.unreviewed_count }}</span>{% endif %}
-        </button>
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <form id="filter-form" method="get" action="{{ url_for('review', market_code=market_code) }}">
+      <input type="hidden" name="show" id="show-input" value="{{ show }}" />
 
-        <button type="button" data-show-val="shortlisted" class="status-opt status-opt--shortlisted {% if show == 'shortlisted' %}active{% endif %}" onclick="setShow('shortlisted')">
-          Shortlisted{% if stats.shortlisted_count %}<span class="status-count">{{ stats.shortlisted_count }}</span>{% endif %}
-        </button>
+      <div class="filter-dropdowns">
+        <select name="creator" class="filter-select" onchange="this.form.submit()">
+          <option value="">All creators</option>
+          {% for c in creators %}
+          <option value="{{ c }}" {% if creator_filter == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
 
-        <button type="button" data-show-val="exported" class="status-opt status-opt--exported {% if show == 'exported' %}active{% endif %}" onclick="setShow('exported')">
-          Exported{% if stats.exported_count %}<span class="status-count">{{ stats.exported_count }}</span>{% endif %}
-        </button>
-
-        <button type="button" data-show-val="failed" class="status-opt status-opt--failed {% if show == 'failed' %}active{% endif %}" onclick="setShow('failed')">
-          Failed{% if stats.failed_count %}<span class="status-count">{{ stats.failed_count }}</span>{% endif %}
-        </button>
+        <select name="theme" class="filter-select" onchange="this.form.submit()">
+          <option value="">All themes</option>
+          {% for t in all_themes %}
+          <option value="{{ t }}" {% if theme_filter == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
       </div>
-    </div>
-  </form>
-</div>
+
+      <div class="status-filters" role="group" aria-label="Show filter">
+        <span class="status-label">STATUS</span>
+        <div class="status-panel">
+          <button type="button" data-show-val="all" class="status-opt {% if show == 'all' %}active{% endif %}" onclick="setShow('all')">
+            All{% if stats.frame_count %}<span class="status-count">{{ stats.frame_count }}</span>{% endif %}
+          </button>
+
+          <button type="button" data-show-val="unreviewed" class="status-opt {% if show == 'unreviewed' %}active{% endif %}" onclick="setShow('unreviewed')">
+            Unreviewed{% if stats.unreviewed_count %}<span class="status-count">{{ stats.unreviewed_count }}</span>{% endif %}
+          </button>
+
+          <button type="button" data-show-val="shortlisted" class="status-opt status-opt--shortlisted {% if show == 'shortlisted' %}active{% endif %}" onclick="setShow('shortlisted')">
+            Shortlisted{% if stats.shortlisted_count %}<span class="status-count">{{ stats.shortlisted_count }}</span>{% endif %}
+          </button>
+
+          <button type="button" data-show-val="exported" class="status-opt status-opt--exported {% if show == 'exported' %}active{% endif %}" onclick="setShow('exported')">
+            Exported{% if stats.exported_count %}<span class="status-count">{{ stats.exported_count }}</span>{% endif %}
+          </button>
+
+          <button type="button" data-show-val="failed" class="status-opt status-opt--failed {% if show == 'failed' %}active{% endif %}" onclick="setShow('failed')">
+            Failed{% if stats.failed_count %}<span class="status-count">{{ stats.failed_count }}</span>{% endif %}
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+</div><!-- /.page-header-sticky -->
 
 <!-- ───── EXPORT BAR (shortlisted view only) ───── -->
 {% if show == 'shortlisted' %}
@@ -186,69 +191,102 @@
 
   {% for creator_block in groups %}
   <section class="creator-section">
-    <h2 class="creator-name">{{ creator_block.creator_name }}</h2>
 
-    {% for video in creator_block.videos %}
-    <div class="video-block" data-video-id="{{ video.video_id }}">
-
-      <div class="video-header">
-        <div class="video-header-left">
-          <h3 class="video-title">{{ video.video_title }}</h3>
-          <span class="video-frame-count mono">
-            {{ video.total_frames }} frame{{ 's' if video.total_frames != 1 else '' }}
-            {% if video.shortlisted > 0 %}
-            <span class="stat-shortlisted">· {{ video.shortlisted }} shortlisted</span>
-            {% endif %}
-            {% if video.exported > 0 %}
-            <span class="stat-exported">· {{ video.exported }} exported</span>
-            {% endif %}
-            {% if video.failed > 0 %}
-            <span class="stat-failed">· {{ video.failed }} failed</span>
-            {% endif %}
-          </span>
-        </div>
-        <div class="video-themes" data-video-id="{{ video.video_id }}">
-          {% for tag in video.themes %}
-          <span class="theme-chip">
-            {{ tag }}
-            <button class="theme-remove" data-tag="{{ tag }}" aria-label="Remove {{ tag }}">×</button>
-          </span>
-          {% endfor %}
-          <button class="theme-add-btn" aria-label="Add theme">+</button>
-          <input class="theme-add-input hidden" type="text" placeholder="add theme…" maxlength="30" />
-        </div>
-      </div>
-
-      <div class="frames-grid">
-        {% for frame in video.frames %}
-        {% set parts = frame.frame_id.split('__') %}
-        {% set market_lower = parts[0] if parts|length > 0 else '' %}
-        {% set creator_slug = parts[1] if parts|length > 1 else '' %}
-        {% set img_url = url_for('serve_frame', market=market_lower, creator_slug=creator_slug, filename=frame.frame_id ~ '.jpg') %}
-        {% set es = frame.export_status %}
-        <button
-          class="frame {{ es | replace('_', '-') }}"
-          data-frame-id="{{ frame.frame_id }}"
-          data-export-status="{{ es }}"
-          aria-label="Frame at {{ frame.timecode }}, {{ es | replace('_', ' ') }}"
-        >
-          <div class="frame-img-wrap">
-            <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
-            <div class="frame-state-overlay" aria-hidden="true">
-              {% if es == 'exported' %}<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>{% endif %}
-              {% if es == 'export_failed' %}<span class="frame-pill frame-pill--failed">✗ FAILED</span>{% endif %}
-            </div>
-          </div>
-          <div class="frame-meta mono">{{ frame.timecode }}</div>
-        </button>
-        {% endfor %}
-      </div>
-
+    <div class="creator-header">
+      <button
+        class="creator-toggle"
+        aria-expanded="true"
+        aria-controls="cb-{{ loop.index0 }}"
+      >
+        <svg class="creator-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2 class="creator-name">{{ creator_block.creator_name }}</h2>
+      </button>
+      {% if creator_block.is_new %}<span class="pill-new">NEW</span>{% endif %}
+      <span class="creator-collapsed-stats" hidden>
+        {%- set parts = [] -%}
+        {%- if creator_block.total_shortlisted > 0 -%}{%- set _ = parts.append(creator_block.total_shortlisted ~ ' shortlisted') -%}{%- endif -%}
+        {%- if creator_block.total_exported > 0 -%}{%- set _ = parts.append(creator_block.total_exported ~ ' exported') -%}{%- endif -%}
+        {%- if creator_block.total_failed > 0 -%}{%- set _ = parts.append(creator_block.total_failed ~ ' failed') -%}{%- endif -%}
+        {{ parts | join(' · ') }}
+      </span>
     </div>
-    {% endfor %}
+
+    <div class="creator-body" id="cb-{{ loop.index0 }}">
+      {% for video in creator_block.videos %}
+      <div class="video-block" data-video-id="{{ video.video_id }}">
+
+        <div class="video-header">
+          <div class="video-header-left">
+            <div class="video-title-row">
+              <h3 class="video-title">{{ video.video_title }}</h3>
+              {% if video.is_new %}<span class="pill-new">NEW</span>{% endif %}
+            </div>
+            <span class="video-frame-count mono">
+              {{ video.total_frames }} frame{{ 's' if video.total_frames != 1 else '' }}
+              {% if video.shortlisted > 0 %}
+              <span class="stat-shortlisted">· {{ video.shortlisted }} shortlisted</span>
+              {% endif %}
+              {% if video.exported > 0 %}
+              <span class="stat-exported">· {{ video.exported }} exported</span>
+              {% endif %}
+              {% if video.failed > 0 %}
+              <span class="stat-failed">· {{ video.failed }} failed</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="video-themes" data-video-id="{{ video.video_id }}">
+            {% for tag in video.themes %}
+            <span class="theme-chip">
+              {{ tag }}
+              <button class="theme-remove" data-tag="{{ tag }}" aria-label="Remove {{ tag }}">×</button>
+            </span>
+            {% endfor %}
+            <button class="theme-add-btn" aria-label="Add theme">+</button>
+            <input class="theme-add-input hidden" type="text" placeholder="add theme…" maxlength="30" />
+          </div>
+        </div>
+
+        <div class="frames-grid">
+          {% for frame in video.frames %}
+          {% set parts = frame.frame_id.split('__') %}
+          {% set market_lower = parts[0] if parts|length > 0 else '' %}
+          {% set creator_slug = parts[1] if parts|length > 1 else '' %}
+          {% set img_url = url_for('serve_frame', market=market_lower, creator_slug=creator_slug, filename=frame.frame_id ~ '.jpg') %}
+          {% set es = frame.export_status %}
+          <button
+            class="frame {{ es | replace('_', '-') }}"
+            data-frame-id="{{ frame.frame_id }}"
+            data-export-status="{{ es }}"
+            aria-label="Frame at {{ frame.timecode }}, {{ es | replace('_', ' ') }}"
+          >
+            <div class="frame-img-wrap">
+              <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
+              <div class="frame-state-overlay" aria-hidden="true">
+                {% if es == 'exported' %}<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>{% endif %}
+                {% if es == 'export_failed' %}<span class="frame-pill frame-pill--failed">✗ FAILED</span>{% endif %}
+              </div>
+            </div>
+            <div class="frame-meta mono">{{ frame.timecode }}</div>
+          </button>
+          {% endfor %}
+        </div>
+
+      </div>
+      {% endfor %}
+    </div><!-- /.creator-body -->
+
   </section>
   {% endfor %}
 </main>
+
+<!-- ───── BACK TO TOP ───── -->
+<button class="back-to-top" id="back-to-top" aria-label="Back to top" hidden>
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</button>
 
 <script>
   const SIFTR = {

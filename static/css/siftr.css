@@ -105,14 +105,15 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 }
 
 .pill-new {
+  display: inline-block;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   padding: 3px 8px;
   background: var(--yellow);
   color: var(--ink);
-  align-self: flex-start;
-  margin-top: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .chooser-stats {
@@ -148,6 +149,21 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   min-height: 100vh;
 }
 
+/* Unified sticky wrapper: topbar + compressed market header + filter bar */
+.page-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg);
+}
+
+/* Override individual sticky on children inside the wrapper */
+.page-header-sticky .topbar,
+.page-header-sticky .filter-bar {
+  position: relative;
+  top: auto;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -177,42 +193,43 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 
 
 /* ════════════════════════════════════════
-   MARKET HEADER
+   MARKET HEADER  (compressed — lives inside sticky wrapper)
 ════════════════════════════════════════ */
 
 .market-header {
-  padding: 48px 40px 36px;
+  padding: 0 40px;
+  height: 64px;
+  display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--rule);
+  background: var(--bg);
 }
 
-.market-header-inner { max-width: 1400px; }
-
-.market-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-light);
-  margin-bottom: 8px;
+.market-header-inner {
+  max-width: 1400px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-mid);
 }
 
 .market-code {
-  font-size: 72px;
+  font-family: var(--sans);
+  font-size: 48px;
   font-weight: 900;
-  letter-spacing: -0.05em;
-  line-height: 0.9;
+  letter-spacing: -0.04em;
+  line-height: 1;
   color: var(--ink);
-  margin-bottom: 16px;
 }
 
-.market-stats {
-  font-size: 14px;
+.market-stat {
+  font-size: 13px;
+  font-family: var(--mono);
   font-weight: 500;
   color: var(--ink-mid);
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-family: var(--mono);
 }
 
 
@@ -667,15 +684,66 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 /* ── Creator section ── */
 .creator-section { margin-bottom: 56px; }
 
+.creator-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.creator-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
+}
+
+.creator-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.creator-chevron {
+  color: var(--ink-light);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+.creator-toggle[aria-expanded="false"] .creator-chevron {
+  transform: rotate(-90deg);
+}
+
 .creator-name {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-light);
-  margin-bottom: 24px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
+}
+
+.creator-collapsed-stats {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+
+.creator-collapsed-stats[hidden] { display: none; }
+.creator-body[hidden] { display: none; }
+
+/* ── Video title + NEW pill row ── */
+.video-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 
@@ -1284,5 +1352,36 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   font-size: 13px;
   color: var(--ink-light);
 }
+
+/* ════════════════════════════════════════
+   BACK TO TOP
+════════════════════════════════════════ */
+
+.back-to-top {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.back-to-top[hidden] { display: none; }
+
+.back-to-top:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.back-to-top:active { transform: translateY(0); }
+
 
 .hidden { display: none !important; }
