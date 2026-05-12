@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import platform
 import random
+import shutil
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -42,7 +44,59 @@ DOWNLOAD_DIR = BASE_DIR / "frames" / "_raw_downloads"
 LOG_PATH = BASE_DIR / "logs" / "harvest.log"
 FAILED_URLS_PATH = BASE_DIR / "logs" / "failed_urls.txt"
 
-RETRY_DELAYS = [30, 60]  # seconds between attempt 1→2 and 2→3
+RETRY_DELAYS = [30, 60]  # seconds between retries for genuine failures
+
+# ---------------------------------------------------------------------------
+# Browser availability check
+# ---------------------------------------------------------------------------
+
+# Common CLI executable names per browser (Linux / macOS PATH)
+_BROWSER_CLI_NAMES: dict[str, list[str]] = {
+    "chrome":   ["google-chrome", "google-chrome-stable", "chromium-browser", "chromium"],
+    "chromium": ["chromium", "chromium-browser", "google-chrome"],
+    "firefox":  ["firefox", "firefox-esr"],
+    "edge":     ["microsoft-edge", "msedge"],
+    "brave":    ["brave", "brave-browser"],
+    "opera":    ["opera"],
+    "safari":   [],  # macOS built-in; detected via app bundle below
+}
+
+# macOS application bundle paths
+_BROWSER_MAC_APPS: dict[str, str] = {
+    "chrome":   "/Applications/Google Chrome.app",
+    "chromium": "/Applications/Chromium.app",
+    "firefox":  "/Applications/Firefox.app",
+    "edge":     "/Applications/Microsoft Edge.app",
+    "brave":    "/Applications/Brave Browser.app",
+    "safari":   "/Applications/Safari.app",
+    "opera":    "/Applications/Opera.app",
+}
+
+
+def _browser_available(browser: str) -> bool:
+    """Return True if the named browser appears to be installed on this machine."""
+    b = browser.lower()
+    if platform.system() == "Darwin":
+        app_path = _BROWSER_MAC_APPS.get(b)
+        if app_path and Path(app_path).exists():
+            return True
+    for name in _BROWSER_CLI_NAMES.get(b, [b]):
+        if shutil.which(name):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Auth-error heuristic
+# ---------------------------------------------------------------------------
+
+# Substrings that suggest a YouTube auth/access failure (cookies may help)
+_AUTH_SIGNALS = ("403", "sign in", "sign-in", "login", "age-restrict", "members only")
+
+
+def _looks_like_auth_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(s in msg for s in _AUTH_SIGNALS)
 
 
 # ---------------------------------------------------------------------------
@@ -265,23 +319,49 @@ def download_with_retry(url: str, video_id: str, dest_dir: Path,
                         cookies_browser: str | None,
                         player_client: str | None,
                         position: str) -> dict | None:
-    max_attempts = 1 + len(RETRY_DELAYS)
+    """
+    Download strategy:
+      1. Try without cookies (fast; works for most public videos).
+      2. If that fails with an auth-related error AND a cookies browser is
+         configured, try once with cookies — no delay before this step.
+      3. For any remaining failures, retry with RETRY_DELAYS between attempts.
+         Retries use cookies only if the auth escalation was triggered.
+    """
     last_error: Exception | None = None
-    for attempt in range(1, max_attempts + 1):
+    use_cookies_for_retries: str | None = None
+
+    # Attempt 1 — no cookies
+    try:
+        log.debug("%s attempt 1: no cookies", position)
+        return download_video(url, video_id, dest_dir, None, player_client)
+    except Exception as exc:
+        last_error = exc
+        log.debug("%s attempt 1 failed: %s", position, exc)
+
+    # Attempt 2 — cookie escalation (no delay; only for auth-like errors)
+    if _looks_like_auth_error(last_error) and cookies_browser:
+        log.info("%s auth error on first attempt — retrying with %s cookies",
+                 position, cookies_browser)
         try:
-            if attempt > 1:
-                log.info("%s RETRY %d/%d  %s", position, attempt, max_attempts, video_id)
             return download_video(url, video_id, dest_dir, cookies_browser, player_client)
         except Exception as exc:
             last_error = exc
-            if attempt < max_attempts:
-                wait = RETRY_DELAYS[attempt - 1]
-                log.warning("%s attempt %d failed: %s — retrying in %ds",
-                            position, attempt, exc, wait)
-                time.sleep(wait)
-            else:
-                log.error("%s FAIL (all %d attempts)  %s  —  %s",
-                          position, max_attempts, video_id, exc)
+            use_cookies_for_retries = cookies_browser
+            log.debug("%s cookie attempt failed: %s", position, exc)
+
+    # Remaining attempts — with delays (genuine failure retries)
+    for i, wait in enumerate(RETRY_DELAYS, start=3):
+        log.warning("%s attempt %d failed: %s — retrying in %ds",
+                    position, i - 1, last_error, wait)
+        time.sleep(wait)
+        try:
+            return download_video(url, video_id, dest_dir,
+                                  use_cookies_for_retries, player_client)
+        except Exception as exc:
+            last_error = exc
+
+    log.error("%s FAIL (all attempts exhausted)  %s  —  %s",
+              position, video_id, last_error)
     append_failed_url(url, str(last_error))
     return None
 
@@ -302,6 +382,15 @@ def run_harvest(url_source: Path) -> None:
     delay_max = cfg.get("download_delay_max", 8)
     cookies_browser = cfg.get("cookies_browser") or None
     player_client = cfg.get("youtube_player_client") or None
+
+    if cookies_browser and not _browser_available(cookies_browser):
+        log.warning(
+            "Configured cookies browser '%s' not found — proceeding without cookies. "
+            "If downloads fail, install the browser or set cookies_browser to null "
+            "in config.yaml.",
+            cookies_browser,
+        )
+        cookies_browser = None
 
     # Always load the full YAML so we have metadata for retry runs too
     all_entries = load_video_entries()

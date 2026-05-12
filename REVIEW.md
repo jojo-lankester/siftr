@@ -91,6 +91,11 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 ## Completed steps (for reference)
 
+- **Download robustness fixes** — `download.py` now:
+  - Checks browser availability before attempting to load cookies. If the configured browser isn't installed, logs a clear warning and continues without cookies rather than hanging or crashing.
+  - Uses a "try simple first" strategy: attempt 1 is always made without cookies (faster, no browser dependency). Cookies are only loaded as a fallback if attempt 1 fails with an auth-related error (HTTP 403, sign-in required, etc.). The RETRY_DELAYS (30s, 60s) only apply to genuine network/server failures, not to the cookie escalation step.
+  - `config.yaml` now has a comment above `cookies_browser` explaining the optional nature and when cookies are used.
+
 - **Step 8: Browser input UI** — `/manage` page built. Supports adding markets, creators, and videos via the browser. Channel URL auto-discovery uses yt-dlp flat playlist scraping. Implementation notes:
   - Channel URL must point to the `/videos` tab (e.g. `@username/videos`) — the channel root returns tab entries, not videos.
   - **`view_count` is always null with `extract_flat=True`** — the "top 3 most-viewed" sort is a no-op; videos come back in YouTube's default channel order. Revisit if ordering matters.

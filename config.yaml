@@ -1,3 +1,9 @@
+# Browser to load YouTube cookies from if a download fails with an auth error
+# (403, sign-in required, etc.). Set to null to skip cookie use entirely.
+# The browser must be installed AND have been used to browse YouTube so that
+# valid cookies exist in its profile. Downloads are always attempted without
+# cookies first; cookies are only used as a fallback when the plain attempt fails.
+# Supported values: chrome, chromium, firefox, edge, brave, safari, opera
 cookies_browser: chrome
 youtube_player_client: android
 download_delay_min: 3
