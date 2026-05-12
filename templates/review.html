@@ -17,8 +17,10 @@
   <!-- TOP BAR -->
   <header class="topbar">
     <div class="topbar-brand">
-      <span class="wordmark">SIFTR</span>
-      <span class="wordmark-sub">creator footage curator</span>
+      <a class="topbar-brand-link" href="{{ url_for('index') }}">
+        <span class="wordmark">SIFTR</span>
+        <span class="wordmark-sub">creator footage curator</span>
+      </a>
     </div>
     <div class="topbar-actions">
       <a class="manage-nav-link" href="{{ url_for('manage') }}">Manage</a>
@@ -198,6 +200,15 @@
         aria-expanded="true"
         aria-controls="cb-{{ loop.index0 }}"
       >
+        <div class="creator-avatar" aria-hidden="true">
+          {% if creator_block.avatar_path %}
+          {% set av = creator_block.avatar_path.split('/') %}
+          <img src="{{ url_for('serve_avatar', market=av[1], filename=av[2]) }}"
+               alt="{{ creator_block.creator_name }}" />
+          {% else %}
+          <span class="creator-avatar-initials">{{ creator_block.avatar_initials }}</span>
+          {% endif %}
+        </div>
         <svg class="creator-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>

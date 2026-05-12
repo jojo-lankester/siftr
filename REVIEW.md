@@ -93,6 +93,8 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 - **Cookies-from-browser was originally mandatory** — first deployment to Mat's Linux machine showed this was overly aggressive: Chrome wasn't installed, so the harvester hung before downloading anything. Fixed by making cookies a fallback triggered only on auth failures, with a browser availability check upfront. General principle: configuration that's necessary on one machine should be a fallback, not a default, until proven needed across machines.
 
+- **Creator avatar fetch strategy** — avatars are fetched via yt-dlp at creator-add time. When a video URL (not a channel URL) is used as the source, yt-dlp returns video info without channel thumbnails; the fix is to follow `channel_url`/`uploader_url` from that info dict and re-fetch at channel level. Thumbnails at channel level come back as an array with varying resolutions — we pick the highest by `width × height`. Downloaded to `creator_avatars/{market}/{slug}.jpg` via `urllib.request` (no `requests` dependency). A daemon thread backfills avatars for creators added before this feature was built.
+
 ---
 
 ## Completed steps (for reference)

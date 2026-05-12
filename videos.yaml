@@ -11,6 +11,7 @@ markets:
     - url: https://www.youtube.com/watch?v=f8Wz2dLqsmA
     - url: https://youtu.be/h3AtfvoNgWg?si=rFCnVqcStOj-ip4z
     - url: https://www.youtube.com/watch?v=ET-o_L-cQuY
+    avatar_path: creator_avatars/uk/test_creator_a.jpg
 - code: AU
   creators:
   - name: Test Creator B
@@ -21,6 +22,7 @@ markets:
     videos:
     - url: https://www.youtube.com/watch?v=boGz13J7IYw
     - url: https://www.youtube.com/watch?v=69AV3rhBj5c
+    avatar_path: creator_avatars/au/test_creator_b.jpg
   - name: Brandon B
     creator_slug: brandon_b
     default_themes: []
@@ -28,6 +30,7 @@ markets:
     - url: https://www.youtube.com/watch?v=HBNndMmRLr8
     - url: https://www.youtube.com/watch?v=3EeRsC0kmSk
     - url: https://www.youtube.com/watch?v=zwkikyEO7ys
+    avatar_path: creator_avatars/au/brandon_b.jpg
   - name: Wall of Entertainment
     creator_slug: wall_of_entertainment
     default_themes: []
@@ -35,3 +38,21 @@ markets:
     - url: https://www.youtube.com/watch?v=9churbvp4Q0
     - url: https://www.youtube.com/watch?v=P7jUjrhf1tQ
     - url: https://www.youtube.com/watch?v=3l8Gj6eOy3k
+    avatar_path: creator_avatars/au/wall_of_entertainment.jpg
+- code: FR
+  creators:
+  - name: GOAL's FanZone
+    creator_slug: goal_s_fanzone
+    default_themes:
+    - cultural
+    videos:
+    - url: https://www.youtube.com/watch?v=RBGm1kx-8bY
+    - url: https://www.youtube.com/watch?v=qTc74yJZWig
+    - url: https://www.youtube.com/watch?v=9nKtVdDGbPo
+    avatar_path: creator_avatars/fr/goal_s_fanzone.jpg
+  - name: GOAL's FanZone
+    creator_slug: goal_s_fanzone
+    avatar_path: null
+    default_themes: []
+    videos:
+    - url: https://www.youtube.com/watch?v=ZeY4UKAeeT8

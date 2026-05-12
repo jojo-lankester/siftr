@@ -8,4 +8,6 @@ exports/*
 !exports/.gitkeep
 logs/*
 !logs/.gitkeep
+creator_avatars/*
+!creator_avatars/.gitkeep
 *.sqlite

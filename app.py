@@ -19,6 +19,7 @@ BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "database.sqlite")
 FRAMES_DIR = os.path.join(BASE_DIR, "frames")
 EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
+AVATARS_DIR = os.path.join(BASE_DIR, "creator_avatars")
 
 YAML_PATH   = os.path.join(BASE_DIR, "videos.yaml")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
@@ -30,6 +31,8 @@ _jobs_lock = threading.Lock()
 
 _export_jobs: dict[str, dict] = {}
 _export_jobs_lock = threading.Lock()
+
+_yaml_lock = threading.Lock()  # serialise all videos.yaml reads+writes
 
 app = Flask(__name__)
 
@@ -79,7 +82,8 @@ def _log_capture(frame_id: str, event: str, error: str = "") -> None:
 
 
 def _run_export_job(job_id: str, market_code: str, frames: list[dict],
-                    export_round: int, export_dir: str, folder_name: str) -> None:
+                    export_round: int, export_dir: str, folder_name: str,
+                    avatar_map: dict[str, str | None] | None = None) -> None:
     import playwright_capture as pc
 
     with open(CONFIG_PATH, encoding="utf-8") as f:
@@ -137,6 +141,7 @@ def _run_export_job(job_id: str, market_code: str, frames: list[dict],
                 "this_exported_at":  now,
                 "resolution":        "1920x1080",
                 "high_res_status":   "success",
+                "avatar_filename":   "",  # filled in below after avatar copy
             })
             results[frame_id] = {"export_status": "exported"}
             _log_capture(frame_id, "success")
@@ -170,6 +175,36 @@ def _run_export_job(job_id: str, market_code: str, frames: list[dict],
             cancelled = _export_jobs[job_id].get("cancelled", False)
         if not cancelled and i < len(frames) - 1:
             time.sleep(delay)
+
+    # Copy creator avatars into export_dir/avatars/
+    slug_to_avatar_filename: dict[str, str] = {}
+    if avatar_map:
+        avatars_export_dir = os.path.join(export_dir, "avatars")
+        os.makedirs(avatars_export_dir, exist_ok=True)
+        for frame in frames:
+            slug = frame.get("creator_slug", "")
+            if slug in slug_to_avatar_filename:
+                continue
+            rel = (avatar_map or {}).get(slug)
+            if rel:
+                src = os.path.join(BASE_DIR, rel)
+                if os.path.isfile(src):
+                    dst_name = f"{slug}.jpg"
+                    try:
+                        shutil.copy2(src, os.path.join(avatars_export_dir, dst_name))
+                        slug_to_avatar_filename[slug] = f"avatars/{dst_name}"
+                    except Exception:
+                        pass
+            if slug not in slug_to_avatar_filename:
+                slug_to_avatar_filename[slug] = ""
+
+    # Backfill avatar_filename into manifest rows
+    for row in manifest_rows:
+        slug = next(
+            (f.get("creator_slug", "") for f in frames if f["frame_id"] == row["frame_id"]),
+            "",
+        )
+        row["avatar_filename"] = slug_to_avatar_filename.get(slug, "")
 
     # Write manifest (successful frames only)
     csv_path = os.path.join(export_dir, "manifest.csv")
@@ -229,26 +264,29 @@ def discover_channel_videos(channel_url: str, max_videos: int = 3, months: int =
 
 
 def update_videos_yaml(market_code: str, creator_name: str, creator_slug: str,
-                        themes: list[str], video_urls: list[str]) -> None:
+                        themes: list[str], video_urls: list[str],
+                        avatar_path: str | None = None) -> None:
     """Append a new creator+videos under market_code in videos.yaml. Non-destructive."""
-    with open(YAML_PATH, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    with _yaml_lock:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
 
-    markets = data.setdefault("markets", [])
-    market_entry = next((m for m in markets if m.get("code") == market_code), None)
-    if not market_entry:
-        market_entry = {"code": market_code, "creators": []}
-        markets.append(market_entry)
+        markets = data.setdefault("markets", [])
+        market_entry = next((m for m in markets if m.get("code") == market_code), None)
+        if not market_entry:
+            market_entry = {"code": market_code, "creators": []}
+            markets.append(market_entry)
 
-    market_entry.setdefault("creators", []).append({
-        "name": creator_name,
-        "creator_slug": creator_slug,
-        "default_themes": themes,
-        "videos": [{"url": u} for u in video_urls],
-    })
+        market_entry.setdefault("creators", []).append({
+            "name": creator_name,
+            "creator_slug": creator_slug,
+            "avatar_path": avatar_path,
+            "default_themes": themes,
+            "videos": [{"url": u} for u in video_urls],
+        })
 
-    with open(YAML_PATH, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        with open(YAML_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
 def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
@@ -283,6 +321,16 @@ def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
             cwd=BASE_DIR, timeout=3600,
         )
 
+        # Fetch creator avatar (best-effort — never fails the job)
+        _update_job(job_id, phase="fetching_avatar",
+                    message="Fetching creator avatar…")
+        avatar_source = channel_url if (input_method == "channel" and channel_url) \
+                        else (video_urls[0] if video_urls else None)
+        avatar_path = None
+        if avatar_source:
+            avatar_path = _fetch_and_save_avatar(avatar_source, market_code, creator_slug)
+        _update_creator_avatar_in_yaml(market_code, creator_slug, avatar_path)
+
         _update_job(job_id,
                     status="complete", phase="complete",
                     message="Done",
@@ -306,6 +354,132 @@ def _is_new(date_added: str | None) -> bool:
         return (datetime.now(timezone.utc) - dt) < timedelta(hours=_NEW_THRESHOLD_HOURS)
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Creator avatar helpers
+# ---------------------------------------------------------------------------
+
+def _creator_initials(name: str) -> str:
+    words = name.split()
+    if len(words) >= 2:
+        return (words[0][0] + words[-1][0]).upper()
+    return name[:2].upper()
+
+
+def _fetch_and_save_avatar(source_url: str, market_code: str,
+                            creator_slug: str) -> str | None:
+    """
+    Fetch the highest-res channel avatar and save to creator_avatars/.
+    source_url may be a channel URL or a video URL.
+    Returns relative path (e.g. 'creator_avatars/au/brandon_b.jpg') or None.
+    """
+    import urllib.request
+    import yt_dlp
+
+    out_dir = os.path.join(AVATARS_DIR, market_code.lower())
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{creator_slug}.jpg")
+
+    try:
+        quiet = {"quiet": True, "no_warnings": True, "skip_download": True}
+
+        with yt_dlp.YoutubeDL({**quiet, "extract_flat": True}) as ydl:
+            info = ydl.extract_info(source_url, download=False)
+
+        if not info:
+            return None
+
+        # If source was a video URL, entries won't be present — re-fetch channel page
+        if "entries" not in info:
+            ch_url = info.get("channel_url") or info.get("uploader_url")
+            if ch_url and ch_url != source_url:
+                with yt_dlp.YoutubeDL({**quiet, "extract_flat": True}) as ydl:
+                    ch_info = ydl.extract_info(ch_url, download=False)
+                if ch_info:
+                    info = ch_info
+
+        thumbnails = info.get("thumbnails") or []
+        if not thumbnails:
+            print(f"SIFTR: No channel thumbnails for {creator_slug}", flush=True)
+            return None
+
+        # Highest resolution — channel avatars are typically square (800×800 max)
+        best = max(thumbnails,
+                   key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))
+        img_url = best.get("url")
+        if not img_url:
+            return None
+
+        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            img_data = resp.read()
+
+        if len(img_data) < 500:
+            return None
+
+        with open(out_path, "wb") as f:
+            f.write(img_data)
+
+        return f"creator_avatars/{market_code.lower()}/{creator_slug}.jpg"
+
+    except Exception as exc:
+        print(f"SIFTR: Avatar fetch warning for {creator_slug}: {exc}", flush=True)
+        return None
+
+
+def _update_creator_avatar_in_yaml(market_code: str, creator_slug: str,
+                                    avatar_path: str | None) -> None:
+    with _yaml_lock:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        for market in data.get("markets", []):
+            if market.get("code") == market_code:
+                for creator in market.get("creators", []):
+                    if creator.get("creator_slug") == creator_slug:
+                        creator["avatar_path"] = avatar_path
+                        break
+        with open(YAML_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False,
+                      sort_keys=False, allow_unicode=True)
+
+
+def _backfill_avatars() -> None:
+    """Background startup task: fetch missing avatars for existing creators."""
+    try:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        to_fetch = [
+            {
+                "market_code": m["code"],
+                "creator_slug": c["creator_slug"],
+                "source_url": (c.get("videos") or [{}])[0].get("url", ""),
+            }
+            for m in data.get("markets", [])
+            for c in m.get("creators", [])
+            if not c.get("avatar_path") and (c.get("videos") or [])
+        ]
+
+        if not to_fetch:
+            return
+
+        print(f"SIFTR: Backfilling avatars for {len(to_fetch)} creator(s)…", flush=True)
+        for item in to_fetch:
+            if not item["source_url"]:
+                continue
+            print(f"SIFTR: Fetching avatar — {item['creator_slug']}", flush=True)
+            avatar_path = _fetch_and_save_avatar(
+                item["source_url"], item["market_code"], item["creator_slug"]
+            )
+            _update_creator_avatar_in_yaml(
+                item["market_code"], item["creator_slug"], avatar_path
+            )
+            status = avatar_path or "failed"
+            print(f"SIFTR: Avatar backfill {item['creator_slug']}: {status}", flush=True)
+
+    except Exception as exc:
+        print(f"SIFTR: Avatar backfill error: {exc}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +511,7 @@ def migrate_db():
 
 
 migrate_db()
+threading.Thread(target=_backfill_avatars, daemon=True).start()
 
 
 def get_db():
@@ -431,6 +606,15 @@ def review(market_code: str):
         all_themes.update(t.strip() for t in (row["themes"] or "").split(",") if t.strip())
     all_themes_list = sorted(all_themes)
 
+    # Build creator_slug → avatar_path map from videos.yaml
+    with open(YAML_PATH, encoding="utf-8") as f:
+        yaml_data = yaml.safe_load(f) or {}
+    avatar_map: dict[str, str | None] = {
+        c.get("creator_slug", ""): c.get("avatar_path")
+        for m in yaml_data.get("markets", [])
+        for c in m.get("creators", [])
+    }
+
     status_clause = SHOW_CLAUSES.get(show, "")
     creator_clause = "AND v.creator_name = ?" if creator_filter else ""
     creator_params: list = [creator_filter] if creator_filter else []
@@ -491,7 +675,12 @@ def review(market_code: str):
 
         cn = vrow["creator_name"]
         if cn not in by_creator:
-            by_creator[cn] = {"creator_name": cn, "videos": [], "min_date": date_added}
+            by_creator[cn] = {
+                "creator_name": cn,
+                "creator_slug": vrow["creator_slug"],
+                "videos": [],
+                "min_date": date_added,
+            }
         else:
             if date_added and (not by_creator[cn]["min_date"] or date_added < by_creator[cn]["min_date"]):
                 by_creator[cn]["min_date"] = date_added
@@ -502,13 +691,17 @@ def review(market_code: str):
     groups: list[dict] = []
     for creator_data in sorted(by_creator.values(), key=lambda c: c["min_date"], reverse=True):
         videos = sorted(creator_data["videos"], key=lambda v: v["date_added"], reverse=True)
+        slug = creator_data["creator_slug"]
         groups.append({
-            "creator_name": creator_data["creator_name"],
-            "videos": videos,
-            "is_new": any(v["is_new"] for v in videos),
+            "creator_name":     creator_data["creator_name"],
+            "creator_slug":     slug,
+            "avatar_path":      avatar_map.get(slug),
+            "avatar_initials":  _creator_initials(creator_data["creator_name"]),
+            "videos":           videos,
+            "is_new":           any(v["is_new"] for v in videos),
             "total_shortlisted": sum(v["shortlisted"] for v in videos),
-            "total_exported": sum(v["exported"] for v in videos),
-            "total_failed": sum(v["failed"] for v in videos),
+            "total_exported":   sum(v["exported"] for v in videos),
+            "total_failed":     sum(v["failed"] for v in videos),
         })
 
     conn.close()
@@ -532,6 +725,14 @@ def review(market_code: str):
 @app.route("/frames/<market>/<creator_slug>/<filename>")
 def serve_frame(market: str, creator_slug: str, filename: str):
     path = os.path.join(FRAMES_DIR, market, creator_slug, filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, mimetype="image/jpeg")
+
+
+@app.route("/creator_avatars/<market>/<filename>")
+def serve_avatar(market: str, filename: str):
+    path = os.path.join(AVATARS_DIR, market, filename)
     if not os.path.isfile(path):
         abort(404)
     return send_file(path, mimetype="image/jpeg")
@@ -608,7 +809,7 @@ def update_themes(video_id: str):
 _CSV_FIELDS = [
     "frame_id", "creator_name", "market", "video_title", "video_url",
     "timecode", "themes", "export_round", "first_exported_at",
-    "this_exported_at", "resolution", "high_res_status",
+    "this_exported_at", "resolution", "high_res_status", "avatar_filename",
 ]
 
 
@@ -633,7 +834,8 @@ def export_market(market_code: str):
     frames = conn.execute(f"""
         SELECT
             f.frame_id, f.timecode, f.resolution, f.exported_at,
-            v.creator_name, v.market, v.video_title, v.video_url, v.themes
+            v.creator_name, v.creator_slug, v.market,
+            v.video_title, v.video_url, v.themes
         FROM frames f
         JOIN videos v ON f.video_id = v.video_id
         WHERE v.market = ? {status_filter}
@@ -674,9 +876,19 @@ def export_market(market_code: str):
             "export_round":           export_round,
         }
 
+    # Build slug → avatar_path map for use inside the export job
+    with open(YAML_PATH, encoding="utf-8") as f:
+        _yd = yaml.safe_load(f) or {}
+    export_avatar_map: dict[str, str | None] = {
+        c.get("creator_slug", ""): c.get("avatar_path")
+        for m in _yd.get("markets", [])
+        for c in m.get("creators", [])
+    }
+
     threading.Thread(
         target=_run_export_job,
-        args=(job_id, market_code, frames_list, export_round, export_dir, folder_name),
+        args=(job_id, market_code, frames_list, export_round,
+              export_dir, folder_name, export_avatar_map),
         daemon=True,
     ).start()
 

@@ -13,10 +13,10 @@
 
 <header class="topbar">
   <div class="topbar-brand">
-    <a href="{{ url_for('index') }}" style="text-decoration:none;color:inherit;">
+    <a class="topbar-brand-link" href="{{ url_for('index') }}">
       <span class="wordmark">SIFTR</span>
+      <span class="wordmark-sub">creator footage curator</span>
     </a>
-    <span class="wordmark-sub">creator footage curator</span>
   </div>
   <a class="manage-nav-link active" href="{{ url_for('manage') }}">Manage</a>
 </header>
@@ -167,7 +167,19 @@
           <div class="setup-market-code">{{ market.code }}</div>
           {% for creator in market.creators %}
           <div class="setup-creator">
-            <div class="setup-creator-name">{{ creator.name }}</div>
+            <div class="setup-creator-header">
+              <div class="creator-avatar creator-avatar--sm" aria-hidden="true">
+                {% if creator.avatar_path %}
+                {% set av = creator.avatar_path.split('/') %}
+                <img src="{{ url_for('serve_avatar', market=av[1], filename=av[2]) }}"
+                     alt="{{ creator.name }}" />
+                {% else %}
+                {% set initials = (creator.name.split()[0][0] + creator.name.split()[-1][0]).upper() if creator.name.split()|length >= 2 else creator.name[:2].upper() %}
+                <span class="creator-avatar-initials">{{ initials }}</span>
+                {% endif %}
+              </div>
+              <div class="setup-creator-name">{{ creator.name }}</div>
+            </div>
             <ul class="setup-videos">
               {% for video in creator.videos %}
               <li class="setup-video mono">{{ video.url }}</li>
@@ -290,11 +302,12 @@
 
   // ── Progress polling ──────────────────────────────────────────────────
   const PHASE_LABELS = {
-    starting:       "Starting…",
-    discovering:    "Discovering videos from channel…",
-    updating_yaml:  "Updating configuration…",
-    harvesting:     "Running harvest pipeline…",
-    complete:       "Complete",
+    starting:        "Starting…",
+    discovering:     "Discovering videos from channel…",
+    updating_yaml:   "Updating configuration…",
+    harvesting:      "Running harvest pipeline…",
+    fetching_avatar: "Fetching creator avatar…",
+    complete:        "Complete",
   };
 
   function showProgress() {
