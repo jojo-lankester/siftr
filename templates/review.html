@@ -182,6 +182,22 @@
   <span id="export-toast-msg"></span>
 </div>
 
+<!-- ───── NEARBY BANNER ───── -->
+<div class="nearby-banner" id="nearby-banner" hidden>
+  <span class="nearby-banner-text">
+    <span class="nearby-label">NEARBY</span><span id="nearby-desc"></span>
+  </span>
+  <button class="nearby-back-btn" id="nearby-back-btn" type="button">Return to market</button>
+</div>
+
+<!-- ───── VIDEO FILTER BANNER ───── -->
+<div class="nearby-banner" id="video-filter-banner" hidden>
+  <span class="nearby-banner-text">
+    <span class="nearby-label">ALL FRAMES</span><span id="video-filter-desc"></span>
+  </span>
+  <button class="nearby-back-btn" id="video-filter-back-btn" type="button">Return to market</button>
+</div>
+
 <!-- ───── GRID + NAV PANEL ───── -->
 <div class="review-layout">
 
@@ -268,21 +284,34 @@
           {% set creator_slug = parts[1] if parts|length > 1 else '' %}
           {% set img_url = url_for('serve_frame', market=market_lower, creator_slug=creator_slug, filename=frame.frame_id ~ '.jpg') %}
           {% set es = frame.export_status %}
-          <button
-            class="frame {{ es | replace('_', '-') }}"
+          <div class="frame-card"
             data-frame-id="{{ frame.frame_id }}"
+            data-timecode="{{ frame.timecode }}"
             data-export-status="{{ es }}"
-            aria-label="Frame at {{ frame.timecode }}, {{ es | replace('_', ' ') }}"
-          >
-            <div class="frame-img-wrap">
-              <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
-              <div class="frame-state-overlay" aria-hidden="true">
-                {% if es == 'exported' %}<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>{% endif %}
-                {% if es == 'export_failed' %}<span class="frame-pill frame-pill--failed">✗ FAILED</span>{% endif %}
+            data-export-round="{{ frame.export_round if frame.export_round is not none else '' }}"
+            data-video-id="{{ video.video_id }}"
+            data-video-title="{{ video.video_title }}"
+            data-creator-name="{{ creator_block.creator_name }}"
+            data-creator-slug="{{ creator_block.creator_slug }}"
+            data-market="{{ market_code }}"
+            data-img-url="{{ img_url }}">
+            <button
+              class="frame {{ es | replace('_', '-') }}"
+              data-frame-id="{{ frame.frame_id }}"
+              data-export-status="{{ es }}"
+              aria-label="Frame at {{ frame.timecode }}, {{ es | replace('_', ' ') }}"
+            >
+              <div class="frame-img-wrap">
+                <img class="frame-img" src="{{ img_url }}" alt="Frame at {{ frame.timecode }}" loading="lazy" />
+                <div class="frame-state-overlay" aria-hidden="true">
+                  {% if es == 'exported' %}<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>{% endif %}
+                  {% if es == 'export_failed' %}<span class="frame-pill frame-pill--failed">✗ FAILED</span>{% endif %}
+                </div>
               </div>
-            </div>
-            <div class="frame-meta mono">{{ frame.timecode }}</div>
-          </button>
+              <div class="frame-meta mono">{{ frame.timecode }}</div>
+            </button>
+            <button class="expand-btn" type="button" aria-label="Expand frame at {{ frame.timecode }}">Expand</button>
+          </div>
           {% endfor %}
         </div>
 
@@ -296,14 +325,6 @@
 
 <!-- ───── NAV PANEL ───── -->
 <aside class="nav-panel" id="nav-panel">
-  <button class="nav-panel-toggle" id="nav-panel-toggle" type="button"
-    aria-label="Toggle navigation panel" aria-expanded="true">
-    <svg class="nav-panel-toggle-icon" width="10" height="10" viewBox="0 0 10 10"
-      fill="none" aria-hidden="true">
-      <path d="M7 2l-4 3 4 3" stroke="currentColor" stroke-width="1.6"
-        stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  </button>
   <div class="nav-panel-inner" id="nav-panel-inner">
     {% for creator_block in groups %}
     <div class="nav-creator" data-idx="{{ loop.index0 }}">
@@ -334,6 +355,87 @@
     <path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 </button>
+
+<!-- ───── DETAIL PANEL ───── -->
+<aside class="detail-panel" id="detail-panel" role="complementary" aria-label="Frame detail">
+  <div class="detail-topbar">
+    <button class="detail-back-btn" id="detail-back-btn" type="button">← Back</button>
+    <div class="detail-topbar-right">
+      <span class="detail-status-badge" id="detail-status-badge"></span>
+      <button class="detail-close-btn" id="detail-close-btn" type="button" aria-label="Close panel">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="detail-img-wrap">
+    <img class="detail-img" id="detail-img" src="" alt="" />
+  </div>
+
+  <div class="detail-meta">
+    <dl class="detail-dl">
+      <div class="detail-row">
+        <dt>CREATOR</dt>
+        <dd><span id="dp-creator-name"></span><span class="detail-handle" id="dp-creator-handle"></span></dd>
+      </div>
+      <div class="detail-row">
+        <dt>MARKET</dt>
+        <dd><span id="dp-market"></span><span class="detail-readonly">(read-only)</span></dd>
+      </div>
+      <div class="detail-row">
+        <dt>VIDEO</dt>
+        <dd id="dp-video-title"></dd>
+      </div>
+      <div class="detail-row">
+        <dt>TIMECODE</dt>
+        <dd class="mono" id="dp-timecode"></dd>
+      </div>
+      <div class="detail-row">
+        <dt>STATUS</dt>
+        <dd id="dp-status"></dd>
+      </div>
+      <div class="detail-row">
+        <dt>FRAME ID</dt>
+        <dd class="detail-frame-id mono" id="dp-frame-id"></dd>
+      </div>
+      <div class="detail-row">
+        <dt>THEMES</dt>
+        <dd>
+          <div class="detail-themes" id="dp-themes"></div>
+          <p class="detail-themes-note">Inherited from video — edits apply to all frames from this video.</p>
+        </dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="detail-shortlist-wrap">
+    <button class="detail-shortlist-btn" id="detail-shortlist-btn" type="button" hidden></button>
+  </div>
+
+  <div class="detail-actions">
+    <button class="detail-action-row" id="da-nearby" type="button">
+      <span id="da-nearby-text">Show nearby frames ±5s</span>
+      <svg class="detail-action-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <p class="detail-action-error" id="da-nearby-error" hidden></p>
+    <button class="detail-action-row" id="da-video" type="button">
+      All frames from this video
+      <svg class="detail-action-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <button class="detail-action-row" id="da-creator" type="button">
+      <span id="da-creator-label">All frames from this creator</span>
+      <svg class="detail-action-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+</aside>
 
 <script>
   const SIFTR = {

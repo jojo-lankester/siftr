@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import csv
+import glob
 import os
 import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -700,6 +702,7 @@ def review(market_code: str):
     show = request.args.get("show", "")
     creator_filter = request.args.get("creator", "")
     theme_filter = request.args.get("theme", "")
+    video_id_filter = request.args.get("video_id", "")
 
     # Market-level stats
     stats = conn.execute("""
@@ -744,6 +747,8 @@ def review(market_code: str):
     status_clause = SHOW_CLAUSES.get(show, "")
     creator_clause = "AND v.creator_name = ?" if creator_filter else ""
     creator_params: list = [creator_filter] if creator_filter else []
+    video_id_clause = "AND v.video_id = ?" if video_id_filter else ""
+    video_id_params: list = [video_id_filter] if video_id_filter else []
 
     video_rows = conn.execute(f"""
         SELECT
@@ -758,8 +763,9 @@ def review(market_code: str):
         LEFT JOIN frames f ON v.video_id = f.video_id
         WHERE v.market = ?
         {creator_clause}
+        {video_id_clause}
         GROUP BY v.video_id
-    """, [market_code] + creator_params).fetchall()
+    """, [market_code] + creator_params + video_id_params).fetchall()
 
     # Collect videos into per-creator buckets (maintaining insertion order for
     # later sort); also track each creator's min date_added for group ordering.
@@ -841,6 +847,7 @@ def review(market_code: str):
         creator_filter=creator_filter,
         all_themes=all_themes_list,
         theme_filter=theme_filter,
+        video_id_filter=video_id_filter,
     )
 
 
@@ -880,6 +887,193 @@ _TOGGLE: dict[str, str] = {
     "export_failed": "shortlisted",
     "exported":      "exported",
 }
+
+
+@app.get("/api/frame/<frame_id>/nearby")
+def get_nearby_frames(frame_id: str):
+    conn = get_db()
+    frame = conn.execute(
+        "SELECT video_id, timestamp_seconds, timecode FROM frames WHERE frame_id = ?",
+        (frame_id,),
+    ).fetchone()
+    if not frame:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    window = int(cfg.get("nearby_frames_window", 60))
+
+    rows = conn.execute("""
+        SELECT frame_id FROM frames
+        WHERE video_id = ?
+          AND ABS(timestamp_seconds - ?) <= ?
+        ORDER BY timestamp_seconds
+    """, (frame["video_id"], frame["timestamp_seconds"], window)).fetchall()
+    conn.close()
+
+    return jsonify({
+        "frame_id":         frame_id,
+        "timecode":         frame["timecode"],
+        "nearby_frame_ids": [r["frame_id"] for r in rows],
+        "window_seconds":   window,
+    })
+
+
+_NEARBY_EXTRACT_WINDOW = 5   # ±5 seconds
+_NEARBY_EXTRACT_FPS    = 2   # 0.5-second intervals
+_NEARBY_DENSITY_THRESH = 5   # if >5 frames exist in the window, skip re-extraction
+
+
+@app.post("/api/frame/<frame_id>/extract_nearby")
+def extract_nearby_frames(frame_id: str):
+    """On-demand fine-grained frame extraction around a timecode."""
+    conn = get_db()
+    frame = conn.execute("""
+        SELECT f.frame_id, f.video_id, f.timestamp_seconds, f.timecode,
+               v.market, v.creator_slug
+        FROM frames f
+        JOIN videos v ON f.video_id = v.video_id
+        WHERE f.frame_id = ?
+    """, (frame_id,)).fetchone()
+    if not frame:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+
+    video_id     = frame["video_id"]
+    ts           = float(frame["timestamp_seconds"])
+    market       = frame["market"].lower()
+    creator_slug = frame["creator_slug"]
+    W            = _NEARBY_EXTRACT_WINDOW
+
+    # Idempotency: if we already have a dense cluster, return existing frames
+    existing = conn.execute("""
+        SELECT frame_id, timestamp_seconds, timecode, export_status
+        FROM frames
+        WHERE video_id = ? AND ABS(timestamp_seconds - ?) <= ?
+        ORDER BY timestamp_seconds
+    """, (video_id, ts, W)).fetchall()
+
+    if len(existing) > _NEARBY_DENSITY_THRESH:
+        def _to_dict(r):
+            parts = r["frame_id"].split("__")
+            return {
+                "frame_id":          r["frame_id"],
+                "timecode":          r["timecode"],
+                "timestamp_seconds": r["timestamp_seconds"],
+                "export_status":     r["export_status"],
+                "img_url":           f"/frames/{parts[0]}/{parts[1]}/{r['frame_id']}.jpg",
+            }
+        conn.close()
+        return jsonify({"status": "already_extracted", "frames": [_to_dict(r) for r in existing]})
+
+    # Find the source video file
+    raw_dir    = os.path.join(FRAMES_DIR, "_raw_downloads")
+    video_path = None
+    for ext in ("mp4", "webm", "mkv"):
+        p = os.path.join(raw_dir, f"{video_id}.{ext}")
+        if os.path.isfile(p):
+            video_path = p
+            break
+
+    if not video_path:
+        conn.close()
+        return jsonify({"error": "source_video_missing"}), 404
+
+    # Extract frames with FFmpeg
+    start_ts = max(0.0, ts - W)
+    duration  = W * 2   # 10 seconds total
+
+    out_dir = os.path.join(FRAMES_DIR, market, creator_slug)
+    os.makedirs(out_dir, exist_ok=True)
+
+    result_frames: list[dict] = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", str(start_ts),
+                "-t",  str(duration),
+                "-i",  video_path,
+                "-vf", f"fps={_NEARBY_EXTRACT_FPS}",
+                "-q:v", "5",
+                os.path.join(tmpdir, "frame_%04d.jpg"),
+            ],
+            capture_output=True,
+            timeout=90,
+        )
+
+        if proc.returncode != 0:
+            conn.close()
+            err = proc.stderr.decode(errors="replace")[-300:]
+            return jsonify({"error": f"ffmpeg_failed: {err}"}), 500
+
+        for i, img_path in enumerate(
+            sorted(glob.glob(os.path.join(tmpdir, "frame_*.jpg")))
+        ):
+            frame_ts_f = round(start_ts + i / _NEARBY_EXTRACT_FPS, 3)
+            total_s    = int(frame_ts_f)
+            ms         = round((frame_ts_f - total_s) * 1000)
+            h          = total_s // 3600
+            m          = (total_s % 3600) // 60
+            s          = total_s % 60
+
+            tc_file      = f"{h:02d}-{m:02d}-{s:02d}.{ms:03d}"
+            tc_display   = f"{h:02d}:{m:02d}:{s:02d}"
+            new_frame_id = f"{market}__{creator_slug}__{video_id}__{tc_file}"
+            dest_path    = os.path.join(out_dir, f"{new_frame_id}.jpg")
+            rel_path     = os.path.join("frames", market, creator_slug, f"{new_frame_id}.jpg")
+
+            # Check if already in DB
+            row = conn.execute(
+                "SELECT frame_id, timecode, export_status FROM frames WHERE frame_id = ?",
+                (new_frame_id,),
+            ).fetchone()
+
+            if row:
+                parts = new_frame_id.split("__")
+                result_frames.append({
+                    "frame_id":          new_frame_id,
+                    "timecode":          row["timecode"],
+                    "timestamp_seconds": frame_ts_f,
+                    "export_status":     row["export_status"],
+                    "img_url":           f"/frames/{parts[0]}/{parts[1]}/{new_frame_id}.jpg",
+                })
+                continue
+
+            shutil.copy2(img_path, dest_path)
+            conn.execute("""
+                INSERT INTO frames (frame_id, video_id, timestamp_seconds, timecode,
+                                    export_status, file_path)
+                VALUES (?, ?, ?, ?, 'unreviewed', ?)
+            """, (new_frame_id, video_id, frame_ts_f, tc_display, rel_path))
+
+            parts = new_frame_id.split("__")
+            result_frames.append({
+                "frame_id":          new_frame_id,
+                "timecode":          tc_display,
+                "timestamp_seconds": frame_ts_f,
+                "export_status":     "unreviewed",
+                "img_url":           f"/frames/{parts[0]}/{parts[1]}/{new_frame_id}.jpg",
+            })
+
+        conn.commit()
+
+    # Always include the original frame
+    if not any(f["frame_id"] == frame_id for f in result_frames):
+        parts = frame_id.split("__")
+        result_frames.append({
+            "frame_id":          frame_id,
+            "timecode":          frame["timecode"],
+            "timestamp_seconds": ts,
+            "export_status":     frame["export_status"] if "export_status" in frame.keys() else "unreviewed",
+            "img_url":           f"/frames/{parts[0]}/{parts[1]}/{frame_id}.jpg",
+        })
+
+    result_frames.sort(key=lambda f: f["timestamp_seconds"])
+    conn.close()
+    return jsonify({"status": "ok", "frames": result_frames})
 
 
 @app.post("/api/frame/<frame_id>/toggle")

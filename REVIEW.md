@@ -125,3 +125,33 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 - **Manage page two-mode flow** — the form has an explicit toggle: "Add new creator" (default) and "Add videos to existing creator". Switching modes preserves the market selection. "New creator" mode validates that the slug is unique in that market and errors with a helpful redirect hint if not. "Existing creator" mode appends new URLs and skips duplicates (idempotent). A startup migration (`_merge_yaml_duplicates`) merges any creators that share a slug in the same market, preserving the avatar from whichever entry has one.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.
+
+---
+
+## "Show nearby frames" — redefined behaviour (Step 6 panel work)
+
+Originally designed to filter the existing grid to frames within ±60s of the selected frame (using a server-side `nearby_frame_ids` API). **Redefined** to instead extract new fine-grained frames from the source video on demand.
+
+### New behaviour
+
+When the designer clicks "Show nearby frames ±5s" in the frame detail panel:
+
+1. The client calls `POST /api/frame/<frame_id>/extract_nearby`.
+2. The server finds the source video at `frames/_raw_downloads/<video_id>.mp4` (or `.webm`, `.mkv`).
+3. FFmpeg extracts frames at 2 fps across a ±5s window (10s total, ~20 frames) into a temp directory.
+4. Each frame is assigned an ID in the standard format: `{market}__{creator_slug}__{video_id}__{HH-MM-SS.mmm}`.
+5. New frames are written to `frames/{market}/{creator_slug}/` and inserted into the `frames` table as `unreviewed`.
+6. **Idempotency**: if >5 frames already exist in the ±5s window for that video (from a previous extraction), FFmpeg is skipped and the existing frames are returned.
+7. The grid filters to show only the returned frames. Any frames new to the DOM are injected as card elements. The nav panel is hidden, and a dark banner appears: "NEARBY · Frames around {timecode} ±5s · {video title}".
+8. "Return to market" restores the full grid and nav panel.
+
+### Why this was chosen over the original approach
+
+The original filter-existing-grid approach was limited to frames that happened to have been extracted during the initial harvest. Harvest uses scene-change detection + uniform sampling at 30s intervals — not designed to capture subtle moments within a few seconds of a chosen frame. The new approach gives designers fine-grained control: see exactly what's around an interesting moment at 0.5s resolution, without pre-extracting every frame of every video.
+
+### Items to review with the team
+
+- **FFmpeg extraction rate**: currently 2 fps (0.5s intervals, ~20 frames per ±5s call). Could tune this — finer or coarser — depending on how much variation there is frame-to-frame.
+- **Window size**: ±5s is conservative. A ±10s or ±15s window might be more useful for B-roll review.
+- **Source video presence**: extraction only works if the raw video file exists at `frames/_raw_downloads/`. If the machine running SIFTR doesn't have the raw downloads (e.g. a deployment where only frames were copied), this feature silently fails with a "Source video file not found" error. Worth deciding whether raw downloads should always travel with the frame files.
+- **Storage growth**: each "Show nearby frames" call adds up to ~20 new frame images (~50–200KB each at q:v 5). With heavy use, this could add up. No cleanup mechanism currently exists for extracted nearby frames.
