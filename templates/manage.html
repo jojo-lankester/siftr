@@ -114,7 +114,7 @@
         <a class="form-cancel" href="{{ url_for('index') }}">← Back</a>
         <button class="go-sift-btn" id="go-sift-btn" type="button">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M7 1v8M4 6l3 3 3-3M2 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           Go Sift
         </button>
@@ -159,7 +159,7 @@
 
   <!-- ── Right: current setup ── -->
   <div class="manage-setup-col">
-    <h2 class="setup-heading">Current setup</h2>
+    <h2 class="setup-heading">Current creators</h2>
     <div class="setup-content">
       {% if markets_setup %}
         {% for market in markets_setup %}

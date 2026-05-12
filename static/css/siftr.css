@@ -46,22 +46,17 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 80px 24px 120px;
+  padding: 0 24px 120px;
 }
+
+.chooser-page .topbar { width: 100%; }
 
 .chooser-wrap {
   width: 100%;
   max-width: 800px;
+  padding-top: 56px;
 }
 
-.chooser-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 64px;
-}
-
-.chooser-header .wordmark { font-size: 22px; }
 
 .chooser-title {
   font-size: 13px;
@@ -162,6 +157,7 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   justify-content: space-between;
   padding: 0 40px;
   height: 52px;
+  width: 100%;
   background: var(--bg);
   border-bottom: 1px solid var(--rule);
 }
@@ -816,14 +812,6 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   gap: 12px;
 }
 
-/* Chooser header: space-between layout */
-.chooser-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 64px;
-}
-
 /* Chooser title row with "+ Add content" */
 .chooser-title-row {
   display: flex;
@@ -833,14 +821,20 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 }
 
 .chooser-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-light);
+  font-weight: 700;
+  color: var(--ink);
   text-decoration: none;
-  letter-spacing: 0.02em;
-  transition: color 0.12s;
+  background: var(--yellow);
+  padding: 7px 16px;
+  border-radius: 100px;
+  letter-spacing: 0.01em;
+  transition: filter 0.12s;
 }
-.chooser-add-btn:hover { color: var(--ink); }
+.chooser-add-btn:hover { filter: brightness(0.93); }
 
 /* ── Manage page layout ── */
 .manage-page { min-height: 100vh; }
