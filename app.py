@@ -289,6 +289,46 @@ def update_videos_yaml(market_code: str, creator_name: str, creator_slug: str,
             yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
+def append_videos_to_creator(market_code: str, creator_slug: str,
+                              new_urls: list[str]) -> tuple[int, str]:
+    """
+    Append new video URLs to an existing creator (idempotent — skips duplicates).
+    Returns (added_count, creator_name).  Raises ValueError if creator not found.
+    """
+    with _yaml_lock:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        creator_name: str | None = None
+        added = 0
+        for m in data.get("markets", []):
+            if m.get("code") != market_code:
+                continue
+            for c in m.get("creators", []):
+                if c.get("creator_slug") != creator_slug:
+                    continue
+                creator_name = c.get("name", creator_slug)
+                existing_urls = {v["url"] for v in c.get("videos", [])}
+                to_add = [u for u in new_urls if u not in existing_urls]
+                added = len(to_add)
+                c.setdefault("videos", []).extend({"url": u} for u in to_add)
+                break
+            if creator_name is not None:
+                break
+
+        if creator_name is None:
+            raise ValueError(
+                f"Creator '{creator_slug}' not found in market {market_code}."
+            )
+
+        if added > 0:
+            with open(YAML_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False,
+                          sort_keys=False, allow_unicode=True)
+
+    return added, creator_name
+
+
 def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
                           creator_slug: str, themes: list[str],
                           input_method: str, channel_url: str, video_urls_raw: str) -> None:
@@ -336,6 +376,46 @@ def _run_add_creator_job(job_id: str, market_code: str, creator_name: str,
                     message="Done",
                     log_tail=_read_log_tail(),
                     video_count=len(video_urls))
+
+    except Exception as exc:
+        _update_job(job_id, status="failed", error=str(exc))
+
+
+def _run_add_videos_job(job_id: str, market_code: str,
+                         creator_slug: str, video_urls_raw: str) -> None:
+    try:
+        video_urls = [u.strip() for u in video_urls_raw.splitlines() if u.strip()]
+        if not video_urls:
+            _update_job(job_id, status="failed", error="No valid video URLs found.")
+            return
+
+        _update_job(job_id, phase="updating_yaml", message="Updating configuration…")
+        added_count, creator_name = append_videos_to_creator(
+            market_code, creator_slug, video_urls
+        )
+        _update_job(job_id, creator_name=creator_name, video_count=added_count)
+
+        if added_count == 0:
+            _update_job(job_id,
+                        status="complete", phase="complete",
+                        message="Done — all URLs already present.",
+                        video_count=0)
+            return
+
+        _update_job(job_id, phase="harvesting",
+                    message=f"Harvesting {added_count} new video(s) — this may take a few minutes…")
+
+        subprocess.run(
+            [sys.executable, "harvest.py"],
+            capture_output=True, text=True,
+            cwd=BASE_DIR, timeout=3600,
+        )
+
+        _update_job(job_id,
+                    status="complete", phase="complete",
+                    message="Done",
+                    log_tail=_read_log_tail(),
+                    video_count=added_count)
 
     except Exception as exc:
         _update_job(job_id, status="failed", error=str(exc))
@@ -444,6 +524,51 @@ def _update_creator_avatar_in_yaml(market_code: str, creator_slug: str,
                       sort_keys=False, allow_unicode=True)
 
 
+def _merge_yaml_duplicates() -> None:
+    """
+    Merge creators that share the same slug within the same market.
+    Runs synchronously at startup before any request is handled.
+    """
+    with _yaml_lock:
+        try:
+            with open(YAML_PATH, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            return
+
+        changed = False
+        for market in data.get("markets", []):
+            seen: dict[str, dict] = {}
+            merged_creators: list[dict] = []
+            for c in market.get("creators", []):
+                slug = c.get("creator_slug", "")
+                if slug and slug in seen:
+                    primary = seen[slug]
+                    if not primary.get("avatar_path") and c.get("avatar_path"):
+                        primary["avatar_path"] = c["avatar_path"]
+                    if not primary.get("default_themes") and c.get("default_themes"):
+                        primary["default_themes"] = c["default_themes"]
+                    existing_urls = {v["url"] for v in primary.get("videos", [])}
+                    to_add = [v for v in c.get("videos", []) if v.get("url") not in existing_urls]
+                    primary.setdefault("videos", []).extend(to_add)
+                    print(
+                        f"SIFTR: Merged duplicate '{slug}' in market "
+                        f"'{market.get('code')}' — added {len(to_add)} URL(s)",
+                        flush=True,
+                    )
+                    changed = True
+                else:
+                    seen[slug] = c
+                    merged_creators.append(c)
+            market["creators"] = merged_creators
+
+        if changed:
+            with open(YAML_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False,
+                          sort_keys=False, allow_unicode=True)
+            print("SIFTR: videos.yaml rewritten after duplicate merge.", flush=True)
+
+
 def _backfill_avatars() -> None:
     """Background startup task: fetch missing avatars for existing creators."""
     try:
@@ -511,6 +636,7 @@ def migrate_db():
 
 
 migrate_db()
+_merge_yaml_duplicates()
 threading.Thread(target=_backfill_avatars, daemon=True).start()
 
 
@@ -932,11 +1058,20 @@ def manage():
         yaml_data = yaml.safe_load(f) or {}
     markets_setup = yaml_data.get("markets", [])
 
+    creators_by_market = {
+        m["code"]: [
+            {"name": c.get("name", ""), "slug": c.get("creator_slug", "")}
+            for c in m.get("creators", [])
+        ]
+        for m in markets_setup
+    }
+
     return render_template(
         "manage.html",
         themes=themes,
         markets_setup=markets_setup,
         known_markets=KNOWN_MARKETS,
+        creators_by_market=creators_by_market,
     )
 
 
@@ -944,16 +1079,66 @@ def manage():
 def manage_submit():
     data = request.get_json(silent=True) or {}
 
+    mode           = data.get("mode", "new")  # "new" | "existing"
     market_code    = data.get("market", "").strip().upper()
-    creator_name   = data.get("creator_name", "").strip()
-    creator_slug   = data.get("creator_slug", "").strip()
-    themes         = [t for t in data.get("themes", []) if t]
-    input_method   = data.get("input_method", "videos")
-    channel_url    = data.get("channel_url", "").strip()
     video_urls_raw = data.get("video_urls", "").strip()
 
     if not market_code:
         return jsonify({"error": "Market is required."}), 400
+
+    # ── Existing creator: append more videos ─────────────────────────────────
+    if mode == "existing":
+        creator_slug = data.get("creator_slug", "").strip()
+        if not creator_slug:
+            return jsonify({"error": "Please select a creator."}), 400
+        if not video_urls_raw:
+            return jsonify({"error": "At least one video URL is required."}), 400
+
+        # Look up the creator name for progress display
+        creator_name = ""
+        with _yaml_lock:
+            with open(YAML_PATH, encoding="utf-8") as f:
+                yaml_lookup = yaml.safe_load(f) or {}
+        for m in yaml_lookup.get("markets", []):
+            if m.get("code") == market_code:
+                for c in m.get("creators", []):
+                    if c.get("creator_slug") == creator_slug:
+                        creator_name = c.get("name", creator_slug)
+                        break
+
+        if not creator_name:
+            return jsonify({"error": "Creator not found in this market."}), 400
+
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {
+                "mode":              "existing",
+                "status":            "running",
+                "phase":             "starting",
+                "message":           "Starting…",
+                "creator_name":      creator_name,
+                "market_code":       market_code,
+                "discovered_videos": [],
+                "video_count":       0,
+                "log_tail":          "",
+                "error":             None,
+            }
+
+        threading.Thread(
+            target=_run_add_videos_job,
+            args=(job_id, market_code, creator_slug, video_urls_raw),
+            daemon=True,
+        ).start()
+
+        return jsonify({"job_id": job_id})
+
+    # ── New creator ──────────────────────────────────────────────────────────
+    creator_name  = data.get("creator_name", "").strip()
+    creator_slug  = data.get("creator_slug", "").strip()
+    themes        = [t for t in data.get("themes", []) if t]
+    input_method  = data.get("input_method", "videos")
+    channel_url   = data.get("channel_url", "").strip()
+
     if not creator_name:
         return jsonify({"error": "Creator name is required."}), 400
     if not creator_slug:
@@ -965,18 +1150,34 @@ def manage_submit():
     if input_method == "videos" and not video_urls_raw:
         return jsonify({"error": "At least one video URL is required."}), 400
 
+    # Duplicate slug check
+    with _yaml_lock:
+        with open(YAML_PATH, encoding="utf-8") as f:
+            yaml_check = yaml.safe_load(f) or {}
+    for m in yaml_check.get("markets", []):
+        if m.get("code") == market_code:
+            for c in m.get("creators", []):
+                if c.get("creator_slug") == creator_slug:
+                    return jsonify({
+                        "error": (
+                            f'A creator with slug "{creator_slug}" already exists in {market_code}. '
+                            f'Switch to "Add videos to existing creator" to add more videos.'
+                        )
+                    }), 400
+
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {
-            "status": "running",
-            "phase": "starting",
-            "message": "Starting…",
-            "creator_name": creator_name,
-            "market_code": market_code,
+            "mode":              "new",
+            "status":            "running",
+            "phase":             "starting",
+            "message":           "Starting…",
+            "creator_name":      creator_name,
+            "market_code":       market_code,
             "discovered_videos": [],
-            "video_count": 0,
-            "log_tail": "",
-            "error": None,
+            "video_count":       0,
+            "log_tail":          "",
+            "error":             None,
         }
 
     threading.Thread(

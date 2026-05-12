@@ -29,7 +29,19 @@
 
     <div class="manage-form" id="manage-form">
 
-      <!-- Market -->
+      <!-- Mode toggle -->
+      <div class="mode-toggle">
+        <label class="mode-opt">
+          <input type="radio" name="form-mode" value="new" id="mode-new" checked />
+          Add new creator
+        </label>
+        <label class="mode-opt">
+          <input type="radio" name="form-mode" value="existing" id="mode-existing" />
+          Add videos to existing creator
+        </label>
+      </div>
+
+      <!-- Market (common to both modes) -->
       <div class="form-row">
         <label class="form-label" for="market-select">Market</label>
         <div class="form-field">
@@ -38,73 +50,99 @@
             {% for m in known_markets %}
             <option value="{{ m }}">{{ m }}</option>
             {% endfor %}
-            <option value="__new__">+ Add new market…</option>
+            <option value="__new__" id="market-new-option">+ Add new market…</option>
           </select>
           <input class="form-input hidden" id="market-new" type="text"
             placeholder="Market code (e.g. NZ)" maxlength="5" autocomplete="off" />
         </div>
       </div>
 
-      <!-- Creator name -->
-      <div class="form-row">
-        <label class="form-label" for="creator-name">Creator name</label>
-        <input class="form-input" id="creator-name" type="text"
-          placeholder="e.g. Jane Smith" autocomplete="off" />
-      </div>
+      <!-- ── New creator fields ── -->
+      <div id="new-creator-fields">
 
-      <!-- Slug -->
-      <div class="form-row">
-        <label class="form-label" for="creator-slug">
-          Slug
-          <span class="form-hint">auto-generated, editable</span>
-        </label>
-        <input class="form-input form-input--mono" id="creator-slug" type="text"
-          placeholder="e.g. jane_smith" autocomplete="off" />
-      </div>
-
-      <!-- Themes -->
-      <div class="form-row">
-        <label class="form-label">Themes</label>
-        <div class="form-checkboxes">
-          {% for theme in themes %}
-          <label class="checkbox-label">
-            <input type="checkbox" class="theme-checkbox" value="{{ theme }}" />
-            {{ theme }}
-          </label>
-          {% endfor %}
+        <!-- Creator name -->
+        <div class="form-row">
+          <label class="form-label" for="creator-name">Creator name</label>
+          <input class="form-input" id="creator-name" type="text"
+            placeholder="e.g. Jane Smith" autocomplete="off" />
         </div>
-      </div>
 
-      <!-- Input method -->
-      <div class="form-row">
-        <label class="form-label">Input method</label>
-        <div class="form-radios">
-          <label class="radio-label">
-            <input type="radio" name="input-method" value="channel" id="method-channel" />
-            Paste a channel URL
+        <!-- Slug -->
+        <div class="form-row">
+          <label class="form-label" for="creator-slug">
+            Slug
+            <span class="form-hint">auto-generated, editable</span>
           </label>
-          <label class="radio-label">
-            <input type="radio" name="input-method" value="videos" id="method-videos" checked />
-            Paste video URLs
-          </label>
+          <input class="form-input form-input--mono" id="creator-slug" type="text"
+            placeholder="e.g. jane_smith" autocomplete="off" />
         </div>
-      </div>
 
-      <!-- Channel URL -->
-      <div class="form-row" id="row-channel" style="display:none">
-        <label class="form-label" for="channel-url">Channel URL</label>
-        <input class="form-input" id="channel-url" type="url"
-          placeholder="https://youtube.com/@username/videos" autocomplete="off" />
-        <p class="form-hint-block">Use the <strong>/videos</strong> tab URL (e.g. <code>@username/videos</code>). Fetches the top 3 most-viewed videos from the last 18 months.</p>
-      </div>
+        <!-- Themes -->
+        <div class="form-row">
+          <label class="form-label">Themes</label>
+          <div class="form-checkboxes">
+            {% for theme in themes %}
+            <label class="checkbox-label">
+              <input type="checkbox" class="theme-checkbox" value="{{ theme }}" />
+              {{ theme }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
 
-      <!-- Video URLs -->
-      <div class="form-row" id="row-videos">
-        <label class="form-label" for="video-urls">Video URLs</label>
-        <textarea class="form-textarea" id="video-urls" rows="4"
-          placeholder="https://youtube.com/watch?v=abc&#10;https://youtube.com/watch?v=xyz"></textarea>
-        <p class="form-hint-block">One URL per line.</p>
-      </div>
+        <!-- Input method -->
+        <div class="form-row">
+          <label class="form-label">Input method</label>
+          <div class="form-radios">
+            <label class="radio-label">
+              <input type="radio" name="input-method" value="channel" id="method-channel" />
+              Paste a channel URL
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="input-method" value="videos" id="method-videos" checked />
+              Paste video URLs
+            </label>
+          </div>
+        </div>
+
+        <!-- Channel URL -->
+        <div class="form-row" id="row-channel" style="display:none">
+          <label class="form-label" for="channel-url">Channel URL</label>
+          <input class="form-input" id="channel-url" type="url"
+            placeholder="https://youtube.com/@username/videos" autocomplete="off" />
+          <p class="form-hint-block">Use the <strong>/videos</strong> tab URL (e.g. <code>@username/videos</code>). Fetches the top 3 most-viewed videos from the last 18 months.</p>
+        </div>
+
+        <!-- Video URLs -->
+        <div class="form-row" id="row-videos">
+          <label class="form-label" for="video-urls">Video URLs</label>
+          <textarea class="form-textarea" id="video-urls" rows="4"
+            placeholder="https://youtube.com/watch?v=abc&#10;https://youtube.com/watch?v=xyz"></textarea>
+          <p class="form-hint-block">One URL per line.</p>
+        </div>
+
+      </div><!-- /#new-creator-fields -->
+
+      <!-- ── Existing creator fields ── -->
+      <div id="existing-creator-fields" style="display:none">
+
+        <!-- Creator select -->
+        <div class="form-row">
+          <label class="form-label" for="existing-creator-select">Creator</label>
+          <select class="form-select" id="existing-creator-select">
+            <option value="">Select a market first…</option>
+          </select>
+        </div>
+
+        <!-- Video URLs -->
+        <div class="form-row">
+          <label class="form-label" for="video-urls-existing">Video URLs</label>
+          <textarea class="form-textarea" id="video-urls-existing" rows="4"
+            placeholder="https://youtube.com/watch?v=abc&#10;https://youtube.com/watch?v=xyz"></textarea>
+          <p class="form-hint-block">One URL per line. Already-present URLs are skipped.</p>
+        </div>
+
+      </div><!-- /#existing-creator-fields -->
 
       <!-- Error -->
       <p class="form-error" id="form-error" hidden></p>
@@ -198,12 +236,22 @@
 </div><!-- /manage-wrap -->
 
 <script>
+const SIFTR_CREATORS = {{ creators_by_market | tojson }};
+</script>
+<script>
 (function () {
   "use strict";
 
   // ── Elements ──────────────────────────────────────────────────────────
+  const modeNew       = document.getElementById("mode-new");
+  const modeExisting  = document.getElementById("mode-existing");
+  const newFields     = document.getElementById("new-creator-fields");
+  const existFields   = document.getElementById("existing-creator-fields");
+
   const marketSelect  = document.getElementById("market-select");
   const marketNew     = document.getElementById("market-new");
+  const marketNewOpt  = document.getElementById("market-new-option");
+
   const creatorName   = document.getElementById("creator-name");
   const creatorSlug   = document.getElementById("creator-slug");
   const methodChannel = document.getElementById("method-channel");
@@ -212,6 +260,10 @@
   const rowVideos     = document.getElementById("row-videos");
   const channelUrl    = document.getElementById("channel-url");
   const videoUrls     = document.getElementById("video-urls");
+
+  const existCreator  = document.getElementById("existing-creator-select");
+  const videoUrlsEx   = document.getElementById("video-urls-existing");
+
   const formError     = document.getElementById("form-error");
   const goSiftBtn     = document.getElementById("go-sift-btn");
   const manageForm    = document.getElementById("manage-form");
@@ -230,17 +282,34 @@
 
   let slugEdited = false;
 
+  // ── Mode toggle ───────────────────────────────────────────────────────
+  function updateModeUI() {
+    const isNew = modeNew.checked;
+    newFields.style.display  = isNew ? "" : "none";
+    existFields.style.display = isNew ? "none" : "";
+    marketNewOpt.disabled = !isNew;
+    // "Add new market" can't be selected in existing mode
+    if (!isNew && marketSelect.value === "__new__") {
+      marketSelect.value = "";
+      marketNew.classList.add("hidden");
+    }
+    if (!isNew && marketSelect.value && marketSelect.value !== "__new__") {
+      populateCreatorDropdown(marketSelect.value);
+    }
+  }
+  modeNew.addEventListener("change", updateModeUI);
+  modeExisting.addEventListener("change", updateModeUI);
+
   // ── Slug auto-generation ──────────────────────────────────────────────
   function toSlug(name) {
     return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   }
-
   creatorName.addEventListener("input", () => {
     if (!slugEdited) creatorSlug.value = toSlug(creatorName.value);
   });
   creatorSlug.addEventListener("input", () => { slugEdited = true; });
 
-  // ── Market new-market toggle ─────────────────────────────────────────
+  // ── Market change ─────────────────────────────────────────────────────
   marketSelect.addEventListener("change", () => {
     if (marketSelect.value === "__new__") {
       marketNew.classList.remove("hidden");
@@ -248,7 +317,28 @@
     } else {
       marketNew.classList.add("hidden");
     }
+    if (modeExisting.checked) {
+      if (marketSelect.value && marketSelect.value !== "__new__") {
+        populateCreatorDropdown(marketSelect.value);
+      } else {
+        existCreator.innerHTML = '<option value="">Select a market first…</option>';
+      }
+    }
   });
+
+  // ── Creator dropdown ──────────────────────────────────────────────────
+  function populateCreatorDropdown(marketCode) {
+    const creators = SIFTR_CREATORS[marketCode] || [];
+    existCreator.innerHTML = creators.length
+      ? '<option value="">Select creator…</option>'
+      : '<option value="" disabled>No creators in this market</option>';
+    creators.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.slug;
+      opt.textContent = c.name;
+      existCreator.appendChild(opt);
+    });
+  }
 
   // ── Input method toggle ───────────────────────────────────────────────
   function updateMethodUI() {
@@ -268,17 +358,29 @@
       ? marketNew.value.trim().toUpperCase()
       : marketSelect.value;
 
-    const themes = [...document.querySelectorAll(".theme-checkbox:checked")].map(cb => cb.value);
+    const isNew = modeNew.checked;
+    let payload;
 
-    const payload = {
-      market,
-      creator_name:  creatorName.value.trim(),
-      creator_slug:  creatorSlug.value.trim(),
-      themes,
-      input_method:  methodChannel.checked ? "channel" : "videos",
-      channel_url:   channelUrl.value.trim(),
-      video_urls:    videoUrls.value.trim(),
-    };
+    if (isNew) {
+      const themes = [...document.querySelectorAll(".theme-checkbox:checked")].map(cb => cb.value);
+      payload = {
+        mode:          "new",
+        market,
+        creator_name:  creatorName.value.trim(),
+        creator_slug:  creatorSlug.value.trim(),
+        themes,
+        input_method:  methodChannel.checked ? "channel" : "videos",
+        channel_url:   channelUrl.value.trim(),
+        video_urls:    videoUrls.value.trim(),
+      };
+    } else {
+      payload = {
+        mode:         "existing",
+        market,
+        creator_slug: existCreator.value,
+        video_urls:   videoUrlsEx.value.trim(),
+      };
+    }
 
     try {
       const res = await fetch("/api/manage/submit", {
@@ -320,8 +422,8 @@
   function pollJob(jobId, marketCode) {
     const interval = setInterval(async () => {
       try {
-        const res  = await fetch(`/api/manage/job/${jobId}`);
-        const job  = await res.json();
+        const res = await fetch(`/api/manage/job/${jobId}`);
+        const job = await res.json();
 
         harvestPhase.textContent = PHASE_LABELS[job.phase] || job.phase;
         harvestMsg.textContent   = job.message || "";
@@ -341,8 +443,14 @@
     progressUI.hidden = true;
     resultUI.hidden = false;
 
-    resultHeading.textContent =
-      `Added ${job.creator_name} to ${job.market_code} — ${job.video_count} video(s) harvested`;
+    if (job.mode === "existing") {
+      resultHeading.textContent = job.video_count > 0
+        ? `Added ${job.video_count} new video(s) to ${job.creator_name}`
+        : `No new videos — all URLs already exist for ${job.creator_name}`;
+    } else {
+      resultHeading.textContent =
+        `Added ${job.creator_name} to ${job.market_code} — ${job.video_count} video(s) harvested`;
+    }
 
     if (job.discovered_videos && job.discovered_videos.length > 0) {
       resultDisc.hidden = false;

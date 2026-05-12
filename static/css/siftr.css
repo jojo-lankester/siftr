@@ -1091,6 +1091,41 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
   margin-bottom: 36px;
 }
 
+/* ── Manage: mode toggle ── */
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1.5px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+.mode-toggle input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.mode-opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 14px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-light);
+  cursor: pointer;
+  user-select: none;
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.mode-opt + .mode-opt { border-left: 1.5px solid var(--rule); }
+.mode-opt:has(input:checked) {
+  background: var(--ink);
+  color: var(--bg);
+}
+
 /* ── Form rows ── */
 .form-row {
   display: flex;

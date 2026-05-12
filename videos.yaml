@@ -49,10 +49,5 @@ markets:
     - url: https://www.youtube.com/watch?v=RBGm1kx-8bY
     - url: https://www.youtube.com/watch?v=qTc74yJZWig
     - url: https://www.youtube.com/watch?v=9nKtVdDGbPo
-    avatar_path: creator_avatars/fr/goal_s_fanzone.jpg
-  - name: GOAL's FanZone
-    creator_slug: goal_s_fanzone
-    avatar_path: null
-    default_themes: []
-    videos:
     - url: https://www.youtube.com/watch?v=ZeY4UKAeeT8
+    avatar_path: creator_avatars/fr/goal_s_fanzone.jpg
