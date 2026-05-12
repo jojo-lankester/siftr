@@ -89,6 +89,12 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 ---
 
+## Lessons from real-world use
+
+- **Cookies-from-browser was originally mandatory** — first deployment to Mat's Linux machine showed this was overly aggressive: Chrome wasn't installed, so the harvester hung before downloading anything. Fixed by making cookies a fallback triggered only on auth failures, with a browser availability check upfront. General principle: configuration that's necessary on one machine should be a fallback, not a default, until proven needed across machines.
+
+---
+
 ## Completed steps (for reference)
 
 - **Download robustness fixes** — `download.py` now:
