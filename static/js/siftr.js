@@ -6,24 +6,49 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
 // ── Export flow ───────────────────────────────────────────────────────────────
 
 (function initExport() {
-  const exportBtn  = document.getElementById("export-btn");
+  const exportBtn       = document.getElementById("export-btn");
   if (!exportBtn) return; // not on shortlisted view
 
-  const overlay    = document.getElementById("export-overlay");
-  const newBtn     = document.getElementById("export-new-btn");
-  const allBtn     = document.getElementById("export-all-btn");
-  const cancelBtn  = document.getElementById("export-cancel");
-  const errorEl    = document.getElementById("export-modal-error");
-  const toast      = document.getElementById("export-toast");
-  const toastMsg   = document.getElementById("export-toast-msg");
-  let toastTimer   = null;
+  const overlay         = document.getElementById("export-overlay");
+  const newBtn          = document.getElementById("export-new-btn");
+  const allBtn          = document.getElementById("export-all-btn");
+  const cancelBtn       = document.getElementById("export-cancel");
+  const errorEl         = document.getElementById("export-modal-error");
+  const timeEstimateEl  = document.getElementById("export-time-estimate");
+  const toast           = document.getElementById("export-toast");
+  const toastMsg        = document.getElementById("export-toast-msg");
 
-  // Disable "Export new" if nothing new to export
+  // Progress state
+  const stateOptions    = document.getElementById("export-state-options");
+  const stateProgress   = document.getElementById("export-state-progress");
+  const stateComplete   = document.getElementById("export-state-complete");
+  const progressFrame   = document.getElementById("export-progress-frame");
+  const progressThumb   = document.getElementById("export-progress-thumb");
+  const progressTc      = document.getElementById("export-progress-timecode");
+  const progressCount   = document.getElementById("export-progress-count");
+  const progressFill    = document.getElementById("export-progress-fill");
+  const cancelCapture   = document.getElementById("export-cancel-capture");
+  const completeTitleEl = document.getElementById("export-complete-title");
+  const completeSummary = document.getElementById("export-complete-summary");
+  const completeFolder  = document.getElementById("export-complete-folder");
+  const retryBtn        = document.getElementById("export-retry-btn");
+  const doneBtn         = document.getElementById("export-done-btn");
+
+  let toastTimer  = null;
+  let pollTimer   = null;
+  let currentJobId = null;
+  let currentTotal = 0;
+
+  // ── Initial button state ──────────────────────────────────────────────────
   if (SIFTR.exportNewCount === 0) newBtn.disabled = true;
   if (SIFTR.exportAllCount === 0) allBtn.disabled = true;
+  updateTimeEstimate("new");
 
+  // ── Open / close ──────────────────────────────────────────────────────────
   exportBtn.addEventListener("click", () => {
+    showState("options");
     errorEl.hidden = true;
+    updateTimeEstimate("new");
     overlay.hidden = false;
     document.addEventListener("keydown", onEsc);
   });
@@ -34,26 +59,58 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
   newBtn.addEventListener("click", () => runExport("new"));
   allBtn.addEventListener("click", () => runExport("all"));
 
+  cancelCapture.addEventListener("click", async () => {
+    cancelCapture.disabled = true;
+    cancelCapture.textContent = "Cancelling…";
+    if (currentJobId) {
+      await fetch(`/api/export/job/${currentJobId}/cancel`, { method: "POST" });
+    }
+  });
+
+  doneBtn.addEventListener("click", closeModal);
+  retryBtn.addEventListener("click", () => runExport("retry"));
+
   function closeModal() {
+    clearInterval(pollTimer);
     overlay.hidden = true;
     document.removeEventListener("keydown", onEsc);
-    setLoading(false);
+    newBtn.disabled  = SIFTR.exportNewCount === 0;
+    allBtn.disabled  = SIFTR.exportAllCount === 0;
   }
 
-  function onEsc(e) { if (e.key === "Escape") closeModal(); }
-
-  function setLoading(on) {
-    [newBtn, allBtn, cancelBtn, exportBtn].forEach((el) => { if (el) el.disabled = on; });
-    if (!on) {
-      // Re-disable zero-count buttons
-      if (SIFTR.exportNewCount === 0) newBtn.disabled = true;
-      if (SIFTR.exportAllCount === 0) allBtn.disabled = true;
-    }
+  function onEsc(e) {
+    if (e.key === "Escape" && stateProgress.hidden) closeModal();
   }
 
+  function showState(name) {
+    stateOptions.hidden  = name !== "options";
+    stateProgress.hidden = name !== "progress";
+    stateComplete.hidden = name !== "complete";
+  }
+
+  function updateTimeEstimate(mode) {
+    const count   = mode === "new" ? SIFTR.exportNewCount : SIFTR.exportAllCount;
+    const minutes = Math.ceil(count * 15 / 60);
+    const mWord   = minutes === 1 ? "minute" : "minutes";
+    const fWord   = count === 1 ? "frame" : "frames";
+    timeEstimateEl.textContent = count > 0
+      ? `Each frame takes ~10–15 s to capture at high resolution. Exporting ${count} ${fWord} will take roughly ${minutes} ${mWord}.`
+      : "";
+  }
+
+  // ── Export start ──────────────────────────────────────────────────────────
   async function runExport(mode) {
-    setLoading(true);
+    newBtn.disabled = allBtn.disabled = true;
     errorEl.hidden = true;
+
+    if (mode === "retry") {
+      showState("progress");
+      progressCount.textContent = "Starting retry…";
+      progressFill.style.width = "0%";
+      progressFrame.hidden = true;
+      cancelCapture.disabled = false;
+      cancelCapture.textContent = "Cancel";
+    }
 
     try {
       const res = await fetch(`/api/market/${SIFTR.marketCode}/export`, {
@@ -61,24 +118,89 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
       });
-
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
+      currentJobId = data.job_id;
+      currentTotal = data.total;
 
-      closeModal();
-      applyExportResults(data.results);
-      adjustStatusCounts(data.exported, data.failed);
-      showToast(data);
+      showState("progress");
+      progressCount.textContent = `0 of ${data.total} complete`;
+      progressFill.style.width = "0%";
+      progressFrame.hidden = true;
+      cancelCapture.disabled = false;
+      cancelCapture.textContent = "Cancel";
+
+      startPolling(data.job_id);
+
     } catch (err) {
+      showState("options");
       errorEl.textContent = err.message;
       errorEl.hidden = false;
-      setLoading(false);
+      newBtn.disabled = SIFTR.exportNewCount === 0;
+      allBtn.disabled = SIFTR.exportAllCount === 0;
     }
   }
 
+  // ── Polling ───────────────────────────────────────────────────────────────
+  function startPolling(jobId) {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/export/job/${jobId}`);
+        const data = await res.json();
+        updateProgressUI(data);
+        if (data.status !== "running") {
+          clearInterval(pollTimer);
+          onExportComplete(data);
+        }
+      } catch (_) { /* keep polling on transient network errors */ }
+    }, 2000);
+  }
+
+  function updateProgressUI(data) {
+    const current = data.current ?? 0;
+    const total   = data.total   ?? currentTotal;
+    progressCount.textContent = `${current} of ${total} complete`;
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    progressFill.style.width = `${pct}%`;
+
+    if (data.current_frame_id) {
+      const parts   = data.current_frame_id.split("__");
+      progressThumb.src = `/frames/${parts[0]}/${parts[1]}/${data.current_frame_id}.jpg`;
+      progressTc.textContent = data.current_frame_timecode ?? "";
+      progressFrame.hidden = false;
+    }
+  }
+
+  // ── Completion ────────────────────────────────────────────────────────────
+  function onExportComplete(data) {
+    if (data.results) {
+      applyExportResults(data.results);
+      adjustStatusCounts(data.exported ?? 0, data.failed ?? 0);
+    }
+
+    const exported     = data.exported ?? 0;
+    const failed       = data.failed   ?? 0;
+    const wasCancelled = data.status === "cancelled";
+
+    completeTitleEl.textContent = wasCancelled ? "Export cancelled" : "Export complete";
+
+    let summary = `${exported} frame${exported !== 1 ? "s" : ""} captured`;
+    if (failed > 0) summary += ` · ${failed} failed`;
+    if (wasCancelled && exported === 0) summary = "No frames captured before cancellation.";
+    completeSummary.textContent = summary;
+    completeFolder.textContent  = data.folder ?? "";
+
+    retryBtn.hidden = failed === 0;
+    if (failed > 0) retryBtn.textContent = `Retry failed (${failed})`;
+
+    showState("complete");
+
+    if (exported > 0) showToast(data);
+  }
+
+  // ── DOM helpers ───────────────────────────────────────────────────────────
   function applyExportResults(results) {
     document.querySelectorAll(".frame").forEach((btn) => {
       const result = results[btn.dataset.frameId];
@@ -92,9 +214,9 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
         `Frame at ${btn.querySelector(".frame-meta")?.textContent?.trim() ?? ""}, ${newStatus.replace(/_/g, " ")}`
       );
 
-      const overlay2 = btn.querySelector(".frame-state-overlay");
-      if (overlay2) {
-        overlay2.innerHTML =
+      const ol = btn.querySelector(".frame-state-overlay");
+      if (ol) {
+        ol.innerHTML =
           newStatus === "exported"
             ? '<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>'
             : newStatus === "export_failed"
@@ -118,7 +240,7 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
     if (!btn) return;
     let span = btn.querySelector(".status-count");
     const current = span ? parseInt(span.textContent, 10) : 0;
-    const next = Math.max(0, current + delta);
+    const next    = Math.max(0, current + delta);
     if (next > 0) {
       if (!span) {
         span = document.createElement("span");
@@ -132,10 +254,10 @@ const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"
   }
 
   function showToast(data) {
-    const frameWord = data.exported === 1 ? "frame" : "frames";
-    let msg = `${data.exported} ${frameWord} exported`;
-    if (data.failed > 0) msg += `, ${data.failed} failed`;
-    msg += ` — ${data.folder}`;
+    const fWord = (data.exported ?? 0) === 1 ? "frame" : "frames";
+    let msg = `${data.exported ?? 0} ${fWord} exported`;
+    if ((data.failed ?? 0) > 0) msg += `, ${data.failed} failed`;
+    if (data.folder) msg += ` — ${data.folder}`;
     toastMsg.textContent = msg;
     toast.hidden = false;
     clearTimeout(toastTimer);

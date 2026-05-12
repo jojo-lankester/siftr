@@ -15,3 +15,6 @@ available_themes:
   - economic
   - social
   - cultural
+playwright_timeout_seconds: 60
+playwright_delay_between_captures: 2
+playwright_headless: true

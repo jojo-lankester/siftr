@@ -102,7 +102,12 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 ## Open features deferred from spec
 
 - **Frame detail panel** (Step 6) — click-to-expand view of an individual frame (full-size image, timecode, status, YouTube link). Deferred in favour of completing the export loop first.
-- **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`. Currently export copies the low-res review frame; `manifest.csv` marks `high_res_status: low_res_only` as a placeholder. This is the next priority after Step 6.
+- **High-res Playwright capture** (Step 7.5) — **built and integrated**. Export now runs Playwright headless Chromium, seeks to the frame timecode, fullscreens, and screenshots at 1920×1080. Implementation notes for future tuning:
+  - Capture runs sequentially (one browser instance at a time) with a configurable delay between frames (`playwright_delay_between_captures` in `config.yaml`, default 2s). Could be parallelised if speed becomes a priority, but risks YouTube rate-limiting and memory pressure.
+  - The 60s per-frame timeout (`playwright_timeout_seconds` in `config.yaml`) was chosen conservatively. Real-world captures take ~12–15s on a fast connection. Tune down once we have production data.
+  - High-res capture relies on the video still being available on YouTube at export time (not at the time of original review). If a video is deleted or made private between harvest and export, that frame will fail with `export_failed`. Worth flagging to Mat and the team — not much we can do about it except note it in the manifest.
+  - Cancel during capture is safe: already-captured frames are kept, in-progress capture finishes its current frame (up to the timeout), then stops. No partial files are left behind.
+  - `manifest.csv` now records `resolution: 1920x1080` and `high_res_status: success` for all included rows (only successful captures are included).
 - **Edit/delete in Manage UI** — `/manage` is add-only. To remove a creator or video, edit `videos.yaml` directly. To be revisited once Mat and the team have used it in practice and we know what "oops" scenarios actually come up.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.

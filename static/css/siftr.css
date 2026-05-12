@@ -509,6 +509,119 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 
 .export-cancel:hover { color: var(--ink); }
 
+/* Time estimate + tip */
+.export-time-estimate {
+  font-size: 12px;
+  color: var(--ink-light);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+.export-tip {
+  font-size: 11px;
+  color: var(--ink-light);
+  margin: 14px 0 16px;
+  line-height: 1.5;
+}
+
+/* ── Progress state ── */
+.export-progress-frame {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  min-height: 56px;
+}
+.export-progress-thumb {
+  width: 80px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--rule);
+  flex-shrink: 0;
+}
+.export-progress-timecode {
+  font-size: 12px;
+  color: var(--ink-light);
+}
+.export-progress-count {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+.export-progress-bar {
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.export-progress-fill {
+  height: 100%;
+  background: var(--yellow);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.export-cancel-capture {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
+  padding: 8px 16px;
+  border: 1.5px solid var(--red);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.export-cancel-capture:hover { background: var(--red); color: #fff; }
+.export-cancel-capture:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Complete state ── */
+.export-complete-summary {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 4px 0 8px;
+  color: var(--ink);
+}
+.export-complete-folder {
+  font-size: 11px;
+  color: var(--ink-light);
+  margin-bottom: 28px;
+  word-break: break-all;
+}
+.export-complete-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.export-done-btn {
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 22px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.export-done-btn:hover { filter: brightness(0.93); }
+.export-retry-btn {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
+  padding: 8px 16px;
+  border: 1.5px solid var(--red);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.export-retry-btn:hover { background: var(--red); color: #fff; }
+.export-retry-btn[hidden] { display: none; }
+
+/* Hidden state sections */
+#export-state-progress[hidden],
+#export-state-complete[hidden],
+#export-state-options[hidden] { display: none; }
+
 
 /* ════════════════════════════════════════
    EXPORT TOAST

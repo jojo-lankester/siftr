@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 import uuid
 import yaml
 from datetime import datetime, timezone
@@ -26,6 +27,9 @@ KNOWN_MARKETS = ["AU", "BR", "DE", "EU", "FR", "ID", "IN", "JP", "UK", "US"]
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+
+_export_jobs: dict[str, dict] = {}
+_export_jobs_lock = threading.Lock()
 
 app = Flask(__name__)
 
@@ -48,6 +52,142 @@ def _read_log_tail(n: int = 25) -> str:
         return "".join(lines[-n:]).strip()
     except Exception:
         return ""
+
+
+def _update_export_job(job_id: str, **kwargs) -> None:
+    with _export_jobs_lock:
+        if job_id in _export_jobs:
+            _export_jobs[job_id].update(kwargs)
+
+
+def _timecode_to_seconds(timecode: str) -> int:
+    """Convert HH:MM:SS.mmm timecode string to integer seconds."""
+    parts = timecode.split(":")
+    h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
+    return int(h * 3600 + m * 60 + s)
+
+
+def _log_capture(frame_id: str, event: str, error: str = "") -> None:
+    log_dir = os.path.join(BASE_DIR, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    line = f"{ts}  {event.upper():8}  {frame_id}"
+    if error:
+        line += f"  — {error}"
+    with open(os.path.join(log_dir, "capture.log"), "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def _run_export_job(job_id: str, market_code: str, frames: list[dict],
+                    export_round: int, export_dir: str, folder_name: str) -> None:
+    import playwright_capture as pc
+
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    timeout_ms = int(cfg.get("playwright_timeout_seconds", 60)) * 1000
+    delay     = float(cfg.get("playwright_delay_between_captures", 2))
+    headless  = bool(cfg.get("playwright_headless", True))
+
+    conn = get_db()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    manifest_rows: list[dict] = []
+    results: dict[str, dict] = {}
+
+    for i, frame in enumerate(frames):
+        with _export_jobs_lock:
+            if _export_jobs[job_id].get("cancelled", False):
+                break
+
+        frame_id  = frame["frame_id"]
+        parts     = frame_id.split("__")
+        video_url = frame["video_url"] or f"https://www.youtube.com/watch?v={parts[2]}"
+        timestamp = _timecode_to_seconds(frame["timecode"])
+        output_path = os.path.join(export_dir, frame_id + ".jpg")
+
+        _update_export_job(job_id,
+            current_frame_id=frame_id,
+            current_frame_timecode=frame["timecode"])
+        _log_capture(frame_id, "attempt")
+
+        try:
+            pc.capture_frame(video_url, timestamp, output_path,
+                             headless=headless, timeout_ms=timeout_ms)
+
+            first_exported_at = frame["exported_at"] or now
+            conn.execute("""
+                UPDATE frames SET
+                    export_status = 'exported',
+                    exported_at   = ?,
+                    export_round  = ?,
+                    export_error  = NULL
+                WHERE frame_id = ?
+            """, (now, export_round, frame_id))
+            conn.commit()
+
+            manifest_rows.append({
+                "frame_id":          frame_id,
+                "creator_name":      frame["creator_name"],
+                "market":            frame["market"],
+                "video_title":       frame["video_title"],
+                "video_url":         video_url,
+                "timecode":          frame["timecode"],
+                "themes":            frame["themes"] or "",
+                "export_round":      export_round,
+                "first_exported_at": first_exported_at,
+                "this_exported_at":  now,
+                "resolution":        "1920x1080",
+                "high_res_status":   "success",
+            })
+            results[frame_id] = {"export_status": "exported"}
+            _log_capture(frame_id, "success")
+
+            with _export_jobs_lock:
+                _export_jobs[job_id]["exported"] += 1
+                _export_jobs[job_id]["current"]   = i + 1
+
+        except Exception as exc:
+            error_msg = str(exc)
+            if os.path.exists(output_path):
+                os.remove(output_path)
+
+            conn.execute("""
+                UPDATE frames SET
+                    export_status = 'export_failed',
+                    export_error  = ?
+                WHERE frame_id = ?
+            """, (error_msg, frame_id))
+            conn.commit()
+
+            results[frame_id] = {"export_status": "export_failed", "error": error_msg}
+            _log_capture(frame_id, "failed", error_msg)
+
+            with _export_jobs_lock:
+                _export_jobs[job_id]["failed"]  += 1
+                _export_jobs[job_id]["current"]  = i + 1
+
+        # Polite delay between captures
+        with _export_jobs_lock:
+            cancelled = _export_jobs[job_id].get("cancelled", False)
+        if not cancelled and i < len(frames) - 1:
+            time.sleep(delay)
+
+    # Write manifest (successful frames only)
+    csv_path = os.path.join(export_dir, "manifest.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(manifest_rows)
+
+    conn.close()
+
+    with _export_jobs_lock:
+        was_cancelled = _export_jobs[job_id].get("cancelled", False)
+        _export_jobs[job_id].update({
+            "status":               "cancelled" if was_cancelled else "complete",
+            "results":              results,
+            "current_frame_id":     None,
+            "current_frame_timecode": None,
+        })
 
 
 def discover_channel_videos(channel_url: str, max_videos: int = 3, months: int = 18) -> list[dict]:
@@ -436,28 +576,25 @@ def update_themes(video_id: str):
 _CSV_FIELDS = [
     "frame_id", "creator_name", "market", "video_title", "video_url",
     "timecode", "themes", "export_round", "first_exported_at",
-    "this_exported_at",
-    # resolution and high_res_status are placeholders until Step 7.5
-    # (Playwright high-res capture). Remove/update when that ships.
-    "resolution", "high_res_status",
+    "this_exported_at", "resolution", "high_res_status",
 ]
 
 
 @app.post("/api/market/<market_code>/export")
 def export_market(market_code: str):
     data = request.get_json(silent=True) or {}
-    mode = data.get("mode", "new")  # "new" | "all"
+    mode = data.get("mode", "new")  # "new" | "all" | "retry"
 
     conn = get_db()
 
-    # Verify market exists
     if not conn.execute("SELECT 1 FROM videos WHERE market = ? LIMIT 1", (market_code,)).fetchone():
         conn.close()
         return jsonify({"error": "market not found"}), 404
 
-    # Determine which frames to include
     if mode == "all":
         status_filter = "AND f.export_status IN ('shortlisted', 'exported')"
+    elif mode == "retry":
+        status_filter = "AND f.export_status = 'export_failed'"
     else:
         status_filter = "AND f.export_status = 'shortlisted'"
 
@@ -470,97 +607,71 @@ def export_market(market_code: str):
         WHERE v.market = ? {status_filter}
         ORDER BY v.creator_name, f.timestamp_seconds
     """, (market_code,)).fetchall()
+    frames_list = [dict(f) for f in frames]
 
-    if not frames:
+    if not frames_list:
         conn.close()
         return jsonify({"error": "no frames to export"}), 400
 
-    # Next export round for this market
     row = conn.execute("""
         SELECT MAX(f.export_round)
         FROM frames f JOIN videos v ON f.video_id = v.video_id
         WHERE v.market = ?
     """, (market_code,)).fetchone()
     export_round = (row[0] or 0) + 1
-
-    # Create export folder
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    folder_name = f"export__{market_code}__{date_str}__round{export_round}"
-    export_dir = os.path.join(EXPORTS_DIR, folder_name)
-    os.makedirs(export_dir, exist_ok=True)
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    results: dict[str, dict] = {}
-    manifest_rows: list[dict] = []
-
-    for frame in frames:
-        frame_id = frame["frame_id"]
-        parts = frame_id.split("__")
-        market_lower, creator_slug = parts[0], parts[1]
-        src = os.path.join(FRAMES_DIR, market_lower, creator_slug, frame_id + ".jpg")
-        dst = os.path.join(export_dir, frame_id + ".jpg")
-
-        try:
-            shutil.copy2(src, dst)
-
-            first_exported_at = frame["exported_at"] or now
-
-            conn.execute("""
-                UPDATE frames SET
-                    export_status = 'exported',
-                    exported_at   = ?,
-                    export_round  = ?,
-                    export_error  = NULL
-                WHERE frame_id = ?
-            """, (now, export_round, frame_id))
-
-            manifest_rows.append({
-                "frame_id":          frame_id,
-                "creator_name":      frame["creator_name"],
-                "market":            frame["market"],
-                "video_title":       frame["video_title"],
-                "video_url":         frame["video_url"] or "",
-                "timecode":          frame["timecode"],
-                "themes":            frame["themes"] or "",
-                "export_round":      export_round,
-                "first_exported_at": first_exported_at,
-                "this_exported_at":  now,
-                "resolution":        frame["resolution"] or "640x360",
-                "high_res_status":   "low_res_only",
-            })
-
-            results[frame_id] = {"export_status": "exported"}
-
-        except Exception as exc:
-            error_msg = str(exc)
-            conn.execute("""
-                UPDATE frames SET
-                    export_status = 'export_failed',
-                    export_error  = ?
-                WHERE frame_id = ?
-            """, (error_msg, frame_id))
-            results[frame_id] = {"export_status": "export_failed", "error": error_msg}
-
-    # Write manifest.csv
-    csv_path = os.path.join(export_dir, "manifest.csv")
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
-        writer.writeheader()
-        writer.writerows(manifest_rows)
-
-    conn.commit()
     conn.close()
 
-    exported = sum(1 for v in results.values() if v["export_status"] == "exported")
-    failed   = sum(1 for v in results.values() if v["export_status"] == "export_failed")
+    date_str    = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    folder_name = f"export__{market_code}__{date_str}__round{export_round}"
+    export_dir  = os.path.join(EXPORTS_DIR, folder_name)
+    os.makedirs(export_dir, exist_ok=True)
+
+    job_id = str(uuid.uuid4())
+    with _export_jobs_lock:
+        _export_jobs[job_id] = {
+            "status":                 "running",
+            "total":                  len(frames_list),
+            "current":                0,
+            "exported":               0,
+            "failed":                 0,
+            "cancelled":              False,
+            "current_frame_id":       None,
+            "current_frame_timecode": None,
+            "results":                {},
+            "folder":                 folder_name,
+            "export_round":           export_round,
+        }
+
+    threading.Thread(
+        target=_run_export_job,
+        args=(job_id, market_code, frames_list, export_round, export_dir, folder_name),
+        daemon=True,
+    ).start()
 
     return jsonify({
-        "export_round": export_round,
+        "job_id":       job_id,
+        "total":        len(frames_list),
         "folder":       folder_name,
-        "exported":     exported,
-        "failed":       failed,
-        "results":      results,
+        "export_round": export_round,
     })
+
+
+@app.get("/api/export/job/<job_id>")
+def export_job_status(job_id: str):
+    with _export_jobs_lock:
+        job = dict(_export_jobs.get(job_id, {}))
+    if not job:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(job)
+
+
+@app.post("/api/export/job/<job_id>/cancel")
+def cancel_export_job(job_id: str):
+    with _export_jobs_lock:
+        if job_id not in _export_jobs:
+            return jsonify({"error": "not found"}), 404
+        _export_jobs[job_id]["cancelled"] = True
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------

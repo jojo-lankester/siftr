@@ -109,30 +109,61 @@
 <!-- ───── EXPORT MODAL ───── -->
 <div class="export-overlay" id="export-overlay" hidden aria-modal="true" role="dialog" aria-labelledby="export-modal-title">
   <div class="export-modal">
-    <h2 class="export-modal-title" id="export-modal-title">Export frames</h2>
-    <p class="export-modal-market">{{ market_code }} market</p>
 
-    <div class="export-options">
-      <button class="export-option" id="export-new-btn" type="button">
-        <div class="export-option-main">
-          <span class="export-option-label">Export new</span>
-          <span class="export-option-count" id="modal-new-count">{{ stats.shortlisted_count or 0 }}</span>
-        </div>
-        <p class="export-option-desc">Shortlisted frames not yet exported</p>
-      </button>
+    <!-- ── State: options ── -->
+    <div id="export-state-options">
+      <h2 class="export-modal-title" id="export-modal-title">Export frames</h2>
+      <p class="export-modal-market">{{ market_code }} market</p>
+      <p class="export-time-estimate" id="export-time-estimate"></p>
 
-      <button class="export-option" id="export-all-btn" type="button">
-        <div class="export-option-main">
-          <span class="export-option-label">Export all shortlisted</span>
-          <span class="export-option-count" id="modal-all-count">{{ (stats.shortlisted_count or 0) + (stats.exported_count or 0) }}</span>
-        </div>
-        <p class="export-option-desc">Includes previously exported frames</p>
-      </button>
+      <div class="export-options">
+        <button class="export-option" id="export-new-btn" type="button">
+          <div class="export-option-main">
+            <span class="export-option-label">Export new</span>
+            <span class="export-option-count" id="modal-new-count">{{ stats.shortlisted_count or 0 }}</span>
+          </div>
+          <p class="export-option-desc">Shortlisted frames not yet exported</p>
+        </button>
+
+        <button class="export-option" id="export-all-btn" type="button">
+          <div class="export-option-main">
+            <span class="export-option-label">Export all shortlisted</span>
+            <span class="export-option-count" id="modal-all-count">{{ (stats.shortlisted_count or 0) + (stats.exported_count or 0) }}</span>
+          </div>
+          <p class="export-option-desc">Includes previously exported frames</p>
+        </button>
+      </div>
+
+      <p class="export-modal-error" id="export-modal-error" hidden></p>
+      <p class="export-tip">Tip: smaller exports are faster to capture and easier to retry. Consider exporting one or two creators at a time.</p>
+      <button class="export-cancel" id="export-cancel" type="button">Cancel</button>
     </div>
 
-    <p class="export-modal-error" id="export-modal-error" hidden></p>
+    <!-- ── State: progress ── -->
+    <div id="export-state-progress" hidden>
+      <h2 class="export-modal-title">Capturing high-res frames</h2>
+      <div class="export-progress-frame" id="export-progress-frame" hidden>
+        <img class="export-progress-thumb" id="export-progress-thumb" src="" alt="Current frame" />
+        <span class="export-progress-timecode mono" id="export-progress-timecode"></span>
+      </div>
+      <p class="export-progress-count" id="export-progress-count">Starting…</p>
+      <div class="export-progress-bar">
+        <div class="export-progress-fill" id="export-progress-fill" style="width:0%"></div>
+      </div>
+      <button class="export-cancel-capture" id="export-cancel-capture" type="button">Cancel</button>
+    </div>
 
-    <button class="export-cancel" id="export-cancel" type="button">Cancel</button>
+    <!-- ── State: complete ── -->
+    <div id="export-state-complete" hidden>
+      <h2 class="export-modal-title" id="export-complete-title">Export complete</h2>
+      <p class="export-complete-summary" id="export-complete-summary"></p>
+      <p class="export-complete-folder mono" id="export-complete-folder"></p>
+      <div class="export-complete-actions">
+        <button class="export-retry-btn" id="export-retry-btn" type="button" hidden>Retry failed</button>
+        <button class="export-done-btn" id="export-done-btn" type="button">Done</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
