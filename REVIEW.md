@@ -89,16 +89,20 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 ---
 
+## Completed steps (for reference)
+
+- **Step 8: Browser input UI** — `/manage` page built. Supports adding markets, creators, and videos via the browser. Channel URL auto-discovery uses yt-dlp flat playlist scraping. Implementation notes:
+  - Channel URL must point to the `/videos` tab (e.g. `@username/videos`) — the channel root returns tab entries, not videos.
+  - **`view_count` is always null with `extract_flat=True`** — the "top 3 most-viewed" sort is a no-op; videos come back in YouTube's default channel order. Revisit if ordering matters.
+  - YouTube Data API v3 is a possible upgrade if yt-dlp scraping becomes unreliable or rate-limited.
+  - The 18-month window and "top 3" defaults are tunable in code. Expect Jack/team feedback once real channels are added.
+
+---
+
 ## Open features deferred from spec
 
-- **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`.
-- **Browser input UI** (Step 8, after Step 7 export and Step 7.5 Playwright capture) — add markets, creators, and videos through the browser instead of editing `videos.yaml` by hand. Deferred deliberately: the priority is completing the core review-and-export loop first, so there's a working end-to-end tool to test in practice before adding convenience features.
-  - Auto-discovery of top videos from a creator's channel (currently a later-stage feature) would integrate naturally into this input UI when built — selecting a creator could surface their top videos for the user to pick from.
-  - Auto-discovery implementation notes (for future review):
-    - Currently uses yt-dlp flat playlist scraping to find videos. YouTube Data API v3 is a possible upgrade if yt-dlp scraping becomes unreliable or rate-limited.
-    - **`view_count` is always null with `extract_flat=True`** — the "top 3 most-viewed" sort is a no-op in practice; videos are returned in YouTube's default channel order. To sort by view count we'd need individual video lookups (slower) or the YouTube Data API. Revisit once we know if channel ordering is good enough.
-    - Channel URL must point to the `/videos` tab (e.g. `@username/videos`) — the channel root returns tab entries, not videos. The form placeholder and hint now make this explicit.
-    - The 18-month window and "top 3" video defaults are tunable (config-level changes). Expect Jack/team feedback to refine these once real channels are added.
-    - No edit or delete in the manage UI yet — add-only by design. To be revisited once Mat and the team have used it in practice and we know what "oops" scenarios actually come up.
+- **Frame detail panel** (Step 6) — click-to-expand view of an individual frame (full-size image, timecode, status, YouTube link). Deferred in favour of completing the export loop first.
+- **High-res Playwright capture** (Step 7.5) — navigate to YouTube timecode, screenshot at 1080p+ into `exports/`. Currently export copies the low-res review frame; `manifest.csv` marks `high_res_status: low_res_only` as a placeholder. This is the next priority after Step 6.
+- **Edit/delete in Manage UI** — `/manage` is add-only. To remove a creator or video, edit `videos.yaml` directly. To be revisited once Mat and the team have used it in practice and we know what "oops" scenarios actually come up.
 - **AI-assisted moment detection** (Step 9 in tech spec) — automatic flagging of high-impact frames using a vision model.
 - **Similar-frame suggestions** — using embedding similarity to surface frames visually related to ones already shortlisted.
