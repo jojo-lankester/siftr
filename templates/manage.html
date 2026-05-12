@@ -18,7 +18,10 @@
       <span class="wordmark-sub">creator footage curator</span>
     </a>
   </div>
-  <a class="manage-nav-link active" href="{{ url_for('manage') }}">Manage</a>
+  <div class="topbar-actions">
+    <a class="manage-nav-link" href="{{ url_for('index') }}">Market overview</a>
+    <a class="manage-nav-link active" href="{{ url_for('manage') }}">Add content</a>
+  </div>
 </header>
 
 <div class="manage-wrap">
@@ -202,7 +205,7 @@
       {% if markets_setup %}
         {% for market in markets_setup %}
         <div class="setup-market">
-          <div class="setup-market-code">{{ market.code }}</div>
+          <a class="setup-market-code" href="{{ url_for('review', market_code=market.code) }}">{{ market.code }}</a>
           {% for creator in market.creators %}
           <div class="setup-creator">
             <div class="setup-creator-header">
@@ -220,7 +223,7 @@
             </div>
             <ul class="setup-videos">
               {% for video in creator.videos %}
-              <li class="setup-video mono">{{ video.url }}</li>
+              <li class="setup-video">{{ url_to_title.get(video.url, video.url) }}</li>
               {% endfor %}
             </ul>
           </div>

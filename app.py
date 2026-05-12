@@ -1066,12 +1066,21 @@ def manage():
         for m in markets_setup
     }
 
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT video_url, video_title FROM videos"
+        " WHERE video_url IS NOT NULL AND video_title IS NOT NULL AND video_title != ''"
+    ).fetchall()
+    conn.close()
+    url_to_title = {r["video_url"]: r["video_title"] for r in rows}
+
     return render_template(
         "manage.html",
         themes=themes,
         markets_setup=markets_setup,
         known_markets=KNOWN_MARKETS,
         creators_by_market=creators_by_market,
+        url_to_title=url_to_title,
     )
 
 

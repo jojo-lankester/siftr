@@ -685,7 +685,14 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
    REVIEW MAIN CONTENT
 ════════════════════════════════════════ */
 
+.review-layout {
+  display: flex;
+  align-items: flex-start;
+}
+
 .review-main {
+  flex: 1;
+  min-width: 0;
   padding: 40px 40px 80px;
   max-width: 1400px;
 }
@@ -1393,11 +1400,17 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 .setup-market { margin-bottom: 28px; }
 
 .setup-market-code {
+  display: block;
   font-size: 22px;
   font-weight: 900;
   letter-spacing: -0.04em;
   color: var(--ink);
   margin-bottom: 10px;
+  text-decoration: none;
+}
+a.setup-market-code:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .setup-creator { margin-bottom: 14px; padding-left: 12px; }
@@ -1470,6 +1483,130 @@ button { font-family: var(--sans); cursor: pointer; border: none; background: no
 }
 
 .back-to-top:active { transform: translateY(0); }
+
+
+/* ════════════════════════════════════════
+   NAV PANEL  (sticky right-side navigator, review pages only)
+════════════════════════════════════════ */
+
+.nav-panel {
+  position: sticky;
+  top: var(--sticky-h, 0);
+  align-self: flex-start;
+  width: 220px;
+  flex-shrink: 0;
+  max-height: calc(100vh - var(--sticky-h, 0));
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-left: 1px solid var(--rule);
+  background: var(--bg);
+  transition: width 0.2s ease;
+}
+
+.nav-panel--collapsed { width: 28px; }
+
+/* Toggle button — sticks to top of the panel's scroll container */
+.nav-panel-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  background: var(--bg);
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  color: var(--ink-light);
+  padding: 0;
+  transition: color 0.15s;
+  box-sizing: border-box;
+}
+
+.nav-panel-toggle:hover { color: var(--ink); }
+
+.nav-panel-toggle-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+/* Expanded: ‹ (points left = "collapse this"); Collapsed: › after rotate */
+.nav-panel--collapsed .nav-panel-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.nav-panel-inner { padding: 10px 0 60px; }
+
+.nav-panel--collapsed .nav-panel-inner { display: none; }
+
+/* Creator row */
+.nav-creator { margin-bottom: 2px; }
+
+.nav-creator-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 7px 10px 7px 10px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  text-align: left;
+  transition: color 0.12s;
+}
+
+.nav-creator-btn:hover { color: var(--ink); }
+
+.nav-creator-chev {
+  flex-shrink: 0;
+  color: var(--ink-mid);
+  transition: transform 0.15s ease;
+}
+
+.nav-creator--collapsed .nav-creator-chev { transform: rotate(-90deg); }
+.nav-creator--collapsed .nav-videos { display: none; }
+
+/* Video row */
+.nav-video-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 5px 10px 5px 20px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-mid);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.nav-video-btn:hover { color: var(--ink); }
+
+.nav-video-btn--active {
+  border-left-color: var(--yellow);
+  color: var(--ink);
+}
+
+/* Back-to-top: shift left so it clears the nav panel */
+.review-page .back-to-top {
+  right: calc(var(--nav-panel-w, 220px) + 20px);
+  transition: right 0.2s ease, transform 0.15s, box-shadow 0.15s;
+}
 
 
 .hidden { display: none !important; }

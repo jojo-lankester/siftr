@@ -446,3 +446,103 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }());
+
+
+// ── Nav panel ─────────────────────────────────────────────────────────────────
+
+(function initNavPanel() {
+  const panel     = document.getElementById("nav-panel");
+  if (!panel) return;
+
+  const toggleBtn = document.getElementById("nav-panel-toggle");
+  const stickyEl  = document.querySelector(".page-header-sticky");
+  const backToTop = document.getElementById("back-to-top");
+
+  // ── Sticky offset ────────────────────────────────────────────────────────
+  const NAV_W_OPEN     = 220;
+  const NAV_W_COLLAPSED = 28;
+
+  function updateStickyOffset() {
+    const h = stickyEl ? stickyEl.offsetHeight : 0;
+    document.documentElement.style.setProperty("--sticky-h", `${h}px`);
+  }
+  updateStickyOffset();
+  window.addEventListener("resize", updateStickyOffset, { passive: true });
+
+  function setNavPanelW(w) {
+    document.documentElement.style.setProperty("--nav-panel-w", `${w}px`);
+  }
+  setNavPanelW(NAV_W_OPEN);
+
+  // ── Panel collapse toggle ────────────────────────────────────────────────
+  let collapsed = false;
+
+  toggleBtn.addEventListener("click", () => {
+    collapsed = !collapsed;
+    panel.classList.toggle("nav-panel--collapsed", collapsed);
+    toggleBtn.setAttribute("aria-expanded", String(!collapsed));
+    setNavPanelW(collapsed ? NAV_W_COLLAPSED : NAV_W_OPEN);
+  });
+
+  // ── Creator expand/collapse in panel ────────────────────────────────────
+  panel.querySelectorAll(".nav-creator-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btn.closest(".nav-creator").classList.toggle("nav-creator--collapsed");
+    });
+  });
+
+  // ── Video nav click ──────────────────────────────────────────────────────
+  panel.querySelectorAll(".nav-video-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const videoId    = btn.dataset.videoId;
+      const videoBlock = document.querySelector(`.video-block[data-video-id="${videoId}"]`);
+      if (!videoBlock) return;
+
+      // Expand creator section in grid if it's collapsed
+      const creatorBody = videoBlock.closest(".creator-body");
+      if (creatorBody && creatorBody.hidden) {
+        const gridToggle = document.querySelector(`[aria-controls="${creatorBody.id}"]`);
+        if (gridToggle) {
+          gridToggle.setAttribute("aria-expanded", "true");
+          creatorBody.hidden = false;
+          const section = creatorBody.closest(".creator-section");
+          const stats = section && section.querySelector(".creator-collapsed-stats");
+          if (stats) stats.hidden = true;
+        }
+      }
+
+      // Scroll to video block, clearing the sticky header
+      const stickyH = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--sticky-h")
+      ) || 0;
+      const rect = videoBlock.getBoundingClientRect();
+      window.scrollTo({ top: window.scrollY + rect.top - stickyH - 16, behavior: "smooth" });
+    });
+  });
+
+  // ── Highlight currently-visible video ───────────────────────────────────
+  const navBtnMap = new Map();
+  panel.querySelectorAll(".nav-video-btn").forEach((btn) => {
+    navBtnMap.set(btn.dataset.videoId, btn);
+  });
+
+  function updateHighlight() {
+    const stickyH = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--sticky-h")
+    ) || 0;
+    let activeId = null;
+
+    document.querySelectorAll(".video-block").forEach((block) => {
+      if (block.getBoundingClientRect().top <= stickyH + 40) {
+        activeId = block.dataset.videoId;
+      }
+    });
+
+    navBtnMap.forEach((btn, id) => {
+      btn.classList.toggle("nav-video-btn--active", id === activeId);
+    });
+  }
+
+  window.addEventListener("scroll", updateHighlight, { passive: true });
+  updateHighlight();
+}());

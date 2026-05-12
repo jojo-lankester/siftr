@@ -30,6 +30,8 @@ markets:
     - url: https://www.youtube.com/watch?v=HBNndMmRLr8
     - url: https://www.youtube.com/watch?v=3EeRsC0kmSk
     - url: https://www.youtube.com/watch?v=zwkikyEO7ys
+    - url: https://youtu.be/39u-tOAOQ_k?si=sO-u1kjWKmMVqZKt
+    - url: https://www.youtube.com/watch?v=39u-tOAOQ_k
     avatar_path: creator_avatars/au/brandon_b.jpg
   - name: Wall of Entertainment
     creator_slug: wall_of_entertainment
@@ -51,3 +53,13 @@ markets:
     - url: https://www.youtube.com/watch?v=9nKtVdDGbPo
     - url: https://www.youtube.com/watch?v=ZeY4UKAeeT8
     avatar_path: creator_avatars/fr/goal_s_fanzone.jpg
+- code: BR
+  creators:
+  - name: Alementary
+    creator_slug: alementary
+    avatar_path: creator_avatars/br/alementary.jpg
+    default_themes:
+    - social
+    videos:
+    - url: https://www.youtube.com/watch?v=vm-qaohxukU
+    - url: https://www.youtube.com/watch?v=VRHRL2lfuxM

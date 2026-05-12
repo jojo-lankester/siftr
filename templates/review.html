@@ -23,8 +23,8 @@
       </a>
     </div>
     <div class="topbar-actions">
-      <a class="manage-nav-link" href="{{ url_for('manage') }}">Manage</a>
-      <a class="switch-market-link" href="{{ url_for('index') }}">Switch market</a>
+      <a class="manage-nav-link" href="{{ url_for('index') }}">Market overview</a>
+      <a class="manage-nav-link" href="{{ url_for('manage') }}">Add content</a>
     </div>
   </header>
 
@@ -182,7 +182,9 @@
   <span id="export-toast-msg"></span>
 </div>
 
-<!-- ───── GRID ───── -->
+<!-- ───── GRID + NAV PANEL ───── -->
+<div class="review-layout">
+
 <main class="review-main">
   {% if not groups %}
   <div class="empty-state">
@@ -291,6 +293,40 @@
   </section>
   {% endfor %}
 </main>
+
+<!-- ───── NAV PANEL ───── -->
+<aside class="nav-panel" id="nav-panel">
+  <button class="nav-panel-toggle" id="nav-panel-toggle" type="button"
+    aria-label="Toggle navigation panel" aria-expanded="true">
+    <svg class="nav-panel-toggle-icon" width="10" height="10" viewBox="0 0 10 10"
+      fill="none" aria-hidden="true">
+      <path d="M7 2l-4 3 4 3" stroke="currentColor" stroke-width="1.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+  <div class="nav-panel-inner" id="nav-panel-inner">
+    {% for creator_block in groups %}
+    <div class="nav-creator" data-idx="{{ loop.index0 }}">
+      <button class="nav-creator-btn" type="button">
+        <svg class="nav-creator-chev" width="8" height="8" viewBox="0 0 8 8"
+          fill="none" aria-hidden="true">
+          <path d="M1 2l3 3 3-3" stroke="currentColor" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        {{ creator_block.creator_name }}
+      </button>
+      <div class="nav-videos">
+        {% for video in creator_block.videos %}
+        <button class="nav-video-btn" type="button"
+          data-video-id="{{ video.video_id }}">{{ video.video_title }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</aside>
+
+</div><!-- /.review-layout -->
 
 <!-- ───── BACK TO TOP ───── -->
 <button class="back-to-top" id="back-to-top" aria-label="Back to top" hidden>
