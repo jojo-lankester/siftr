@@ -4,3 +4,4 @@ pillow
 imagehash
 pyyaml
 opencv-python
+playwright

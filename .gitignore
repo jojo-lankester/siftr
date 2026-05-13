@@ -11,3 +11,4 @@ logs/*
 creator_avatars/*
 !creator_avatars/.gitkeep
 *.sqlite
+.siftr_installed
