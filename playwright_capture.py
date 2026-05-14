@@ -106,8 +106,10 @@ def _seek_and_pause(page, seconds: float) -> float:
     """)
     page.wait_for_timeout(1_500)
     actual = page.evaluate("""
-        const p = document.querySelector('#movie_player');
-        return (p && p.getCurrentTime) ? p.getCurrentTime() : null;
+        () => {
+            const p = document.querySelector('#movie_player');
+            return (p && p.getCurrentTime) ? p.getCurrentTime() : null;
+        }
     """)
     return float(actual) if actual is not None else -1.0
 
