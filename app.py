@@ -65,11 +65,11 @@ def _update_export_job(job_id: str, **kwargs) -> None:
             _export_jobs[job_id].update(kwargs)
 
 
-def _timecode_to_seconds(timecode: str) -> int:
-    """Convert HH:MM:SS.mmm timecode string to integer seconds."""
+def _timecode_to_seconds(timecode: str) -> float:
+    """Convert HH:MM:SS.mmm timecode string to seconds, preserving sub-second precision."""
     parts = timecode.split(":")
     h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
-    return int(h * 3600 + m * 60 + s)
+    return h * 3600 + m * 60 + s
 
 
 def _log_capture(frame_id: str, event: str, error: str = "") -> None:

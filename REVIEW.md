@@ -89,6 +89,27 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 ---
 
+## Critical bugs found in real-world use
+
+### Playwright capture landing on wrong frame (found 2026-05-14)
+
+**Symptom**: Exported high-res image filename was correct (e.g. `uk__test_creator_a__f8Wz2dLqsmA__00-11-35.680.jpg`) but the image content was a different moment — different background, different shot.
+
+**Root cause**: Two places were silently discarding sub-second precision:
+1. `_timecode_to_seconds` in `app.py` cast the result to `int`, converting `695.68s` → `695s` (losing 680ms).
+2. `capture_frame` in `playwright_capture.py` had `timestamp_seconds: int` type hint, reinforcing the design intent as integer-only.
+3. The URL `?t=` parameter only accepts whole seconds (YouTube limitation) — this is fine because it's just for initial navigation; the actual seek happens via `p.seekTo()` in the YouTube IFrame Player API, which does support float values.
+
+**Fix**: `_timecode_to_seconds` now returns `float` (no `int()` cast). `capture_frame` and `_seek_and_pause` accept `float`. The `seekTo()` call now passes the full float (e.g. `695.68`), not a truncated integer. The URL `?t=` still uses `int(timestamp_seconds)` since YouTube ignores the fractional part there anyway.
+
+**Precision now achievable**: YouTube's `seekTo()` IFrame API supports sub-second values. In practice, expect ±0.1s or better on a paused video.
+
+**Validation added**: After each seek, `getCurrentTime()` is read back from the player. If the drift exceeds 0.5s the frame is marked `export_failed` (RuntimeError raised). If between 0.1–0.5s, a warning is printed. The actual vs. requested timecode is always logged to stdout during capture.
+
+**If anyone reports "exported images don't match what I picked"**: check this first. Confirm `_timecode_to_seconds` returns `float` and `p.seekTo()` is receiving the full float value. Check `logs/capture.log` for seek OK / WARNING lines.
+
+---
+
 ## Lessons from real-world use
 
 - **Cookies-from-browser was originally mandatory** — first deployment to Mat's Linux machine showed this was overly aggressive: Chrome wasn't installed, so the harvester hung before downloading anything. Fixed by making cookies a fallback triggered only on auth failures, with a browser availability check upfront. General principle: configuration that's necessary on one machine should be a fallback, not a default, until proven needed across machines.

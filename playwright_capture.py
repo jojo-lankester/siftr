@@ -17,21 +17,22 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 def capture_frame(
     video_url: str,
-    timestamp_seconds: int,
+    timestamp_seconds: float,
     output_path: str,
     *,
     headless: bool = True,
     timeout_ms: int = 60_000,
 ) -> bool:
     """
-    Navigate to video_url, seek to timestamp_seconds, capture a 1920×1080
-    fullscreen screenshot of the video frame, save to output_path as JPEG.
+    Navigate to video_url, seek to timestamp_seconds (float, sub-second precision),
+    capture a 1920×1080 fullscreen screenshot of the video frame, save to output_path.
 
     Returns True on success.
-    Raises RuntimeError with a clear message on failure.
+    Raises RuntimeError with a descriptive message on any failure, including seek
+    precision failures (actual player time differs from requested by > 0.5s).
     """
     sep = "&" if "?" in video_url else "?"
-    url = f"{video_url}{sep}t={timestamp_seconds}s"
+    url = f"{video_url}{sep}t={int(timestamp_seconds)}s"
 
     try:
         with sync_playwright() as p:
@@ -44,7 +45,8 @@ def capture_frame(
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 page.wait_for_selector("#movie_player", timeout=20_000)
                 _dismiss_consent(page)
-                _seek_and_pause(page, timestamp_seconds)
+                actual_time = _seek_and_pause(page, timestamp_seconds)
+                _validate_seek(actual_time, timestamp_seconds)
                 _fullscreen(page)
                 page.wait_for_timeout(2_000)
 
@@ -93,7 +95,8 @@ def _dismiss_consent(page) -> None:
             continue
 
 
-def _seek_and_pause(page, seconds: int) -> None:
+def _seek_and_pause(page, seconds: float) -> float:
+    """Seek to seconds (float precision), pause, then return the player's actual current time."""
     page.evaluate(f"""
         const p = document.querySelector('#movie_player');
         if (p && p.seekTo) {{
@@ -102,6 +105,31 @@ def _seek_and_pause(page, seconds: int) -> None:
         }}
     """)
     page.wait_for_timeout(1_500)
+    actual = page.evaluate("""
+        const p = document.querySelector('#movie_player');
+        return (p && p.getCurrentTime) ? p.getCurrentTime() : null;
+    """)
+    return float(actual) if actual is not None else -1.0
+
+
+def _validate_seek(actual: float, requested: float) -> None:
+    """Raise RuntimeError if seek drift exceeds 0.5s; warn if it exceeds 0.1s."""
+    if actual < 0:
+        print(f"[capture] WARNING: could not read player time after seek (requested {requested:.3f}s)")
+        return
+    drift = abs(actual - requested)
+    if drift > 0.5:
+        raise RuntimeError(
+            f"Seek precision failure: requested {requested:.3f}s, player landed at {actual:.3f}s "
+            f"(drift {drift:.3f}s exceeds 0.5s tolerance). Mark as export_failed and retry."
+        )
+    if drift > 0.1:
+        print(
+            f"[capture] WARNING: seek drift {drift:.3f}s "
+            f"(requested {requested:.3f}s, got {actual:.3f}s)"
+        )
+    else:
+        print(f"[capture] seek OK: requested {requested:.3f}s, got {actual:.3f}s (drift {drift:.3f}s)")
 
 
 def _fullscreen(page) -> None:
