@@ -71,32 +71,9 @@ $PIP install --quiet --upgrade pip
 $PIP install --quiet -r requirements.txt
 ok "All requirements installed"
 
-# ── 4. Playwright Chromium browser ───────────────────────────────────────────
+# ── 4. FFmpeg ─────────────────────────────────────────────────────────────────
 
-step "Step 4 — Playwright Chromium browser"
-
-# Check whether Chromium is already present before running the full install
-CHROMIUM_PRESENT=false
-if $PY -c "
-from playwright.sync_api import sync_playwright
-import os
-with sync_playwright() as p:
-    assert os.path.isfile(p.chromium.executable_path)
-" 2>/dev/null; then
-  CHROMIUM_PRESENT=true
-fi
-
-if $CHROMIUM_PRESENT; then
-  ok "Playwright Chromium already installed — skipping"
-else
-  echo "  Downloading Chromium (this may take a minute)…"
-  $PY -m playwright install chromium
-  ok "Playwright Chromium installed"
-fi
-
-# ── 5. FFmpeg ─────────────────────────────────────────────────────────────────
-
-step "Step 5 — FFmpeg"
+step "Step 4 — FFmpeg"
 
 if command -v ffmpeg &>/dev/null; then
   FFMPEG_VER=$(ffmpeg -version 2>&1 | head -1 | awk '{print $3}' || echo "installed")
@@ -114,9 +91,9 @@ else
   exit 1
 fi
 
-# ── 6. Fresh-install: reset videos.yaml + initialise database ────────────────
+# ── 5. Fresh-install: reset videos.yaml + initialise database ────────────────
 
-step "Step 6 — Database"
+step "Step 5 — Database"
 
 if [[ ! -f ".siftr_installed" ]]; then
   # First run — write a clean videos.yaml so no dev test data is present
@@ -128,9 +105,9 @@ fi
 
 $PY setup.py
 
-# ── 7. Verification ───────────────────────────────────────────────────────────
+# ── 6. Verification ───────────────────────────────────────────────────────────
 
-step "Step 7 — Verifying installation"
+step "Step 6 — Verifying installation"
 
 ALL_OK=true
 
@@ -143,7 +120,7 @@ else
 fi
 
 # All required packages importable
-if $PY -c "import flask, yt_dlp, PIL, imagehash, yaml, cv2, playwright" 2>/dev/null; then
+if $PY -c "import flask, yt_dlp, PIL, imagehash, yaml, cv2" 2>/dev/null; then
   ok "Python packages"
 else
   err "Some packages failed to import — try: $PIP install -r requirements.txt"
@@ -155,20 +132,6 @@ if command -v ffmpeg &>/dev/null; then
   ok "FFmpeg on PATH"
 else
   err "FFmpeg not found on PATH"
-  ALL_OK=false
-fi
-
-# Playwright Chromium executable
-if $PY -c "
-from playwright.sync_api import sync_playwright
-import os
-with sync_playwright() as p:
-    path = p.chromium.executable_path
-    assert os.path.isfile(path), f'not at {path}'
-" 2>/dev/null; then
-  ok "Playwright Chromium"
-else
-  err "Playwright Chromium not found — try: $PY -m playwright install chromium"
   ALL_OK=false
 fi
 

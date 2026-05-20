@@ -1,12 +1,6 @@
 "use strict";
 
-// ── Export-status state classes ───────────────────────────────────────────────
-const STATUS_CLASSES = ["unreviewed", "shortlisted", "exported", "export-failed"];
-
-// Maps an export_status value to its status-bar data-show-val
-function statusToShowVal(exportStatus) {
-  return exportStatus === "export_failed" ? "failed" : exportStatus;
-}
+const STATUS_CLASSES = ["unreviewed", "shortlisted"];
 
 // Increment or decrement a status-bar count badge (creates/removes as needed)
 function nudgeCount(showVal, delta) {
@@ -27,260 +21,14 @@ function nudgeCount(showVal, delta) {
   }
 }
 
-// ── Export flow ───────────────────────────────────────────────────────────────
-
-(function initExport() {
-  const exportBtn       = document.getElementById("export-btn");
-  if (!exportBtn) return; // not on shortlisted view
-
-  const overlay         = document.getElementById("export-overlay");
-  const newBtn          = document.getElementById("export-new-btn");
-  const allBtn          = document.getElementById("export-all-btn");
-  const cancelBtn       = document.getElementById("export-cancel");
-  const errorEl         = document.getElementById("export-modal-error");
-  const timeEstimateEl  = document.getElementById("export-time-estimate");
-  const toast           = document.getElementById("export-toast");
-  const toastMsg        = document.getElementById("export-toast-msg");
-
-  // Progress state
-  const stateOptions    = document.getElementById("export-state-options");
-  const stateProgress   = document.getElementById("export-state-progress");
-  const stateComplete   = document.getElementById("export-state-complete");
-  const progressFrame   = document.getElementById("export-progress-frame");
-  const progressThumb   = document.getElementById("export-progress-thumb");
-  const progressTc      = document.getElementById("export-progress-timecode");
-  const progressCount   = document.getElementById("export-progress-count");
-  const progressFill    = document.getElementById("export-progress-fill");
-  const cancelCapture   = document.getElementById("export-cancel-capture");
-  const completeTitleEl = document.getElementById("export-complete-title");
-  const completeSummary = document.getElementById("export-complete-summary");
-  const completeFolder  = document.getElementById("export-complete-folder");
-  const retryBtn        = document.getElementById("export-retry-btn");
-  const doneBtn         = document.getElementById("export-done-btn");
-
-  let toastTimer  = null;
-  let pollTimer   = null;
-  let currentJobId = null;
-  let currentTotal = 0;
-
-  // ── Initial button state ──────────────────────────────────────────────────
-  if (SIFTR.exportNewCount === 0) newBtn.disabled = true;
-  if (SIFTR.exportAllCount === 0) allBtn.disabled = true;
-  updateTimeEstimate("new");
-
-  // ── Open / close ──────────────────────────────────────────────────────────
-  exportBtn.addEventListener("click", () => {
-    showState("options");
-    errorEl.hidden = true;
-    updateTimeEstimate("new");
-    overlay.hidden = false;
-    document.addEventListener("keydown", onEsc);
-  });
-
-  cancelBtn.addEventListener("click", closeModal);
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
-
-  newBtn.addEventListener("click", () => runExport("new"));
-  allBtn.addEventListener("click", () => runExport("all"));
-
-  cancelCapture.addEventListener("click", async () => {
-    cancelCapture.disabled = true;
-    cancelCapture.textContent = "Cancelling…";
-    if (currentJobId) {
-      await fetch(`/api/export/job/${currentJobId}/cancel`, { method: "POST" });
-    }
-  });
-
-  doneBtn.addEventListener("click", closeModal);
-  retryBtn.addEventListener("click", () => runExport("retry"));
-
-  function closeModal() {
-    clearInterval(pollTimer);
-    overlay.hidden = true;
-    document.removeEventListener("keydown", onEsc);
-    newBtn.disabled  = SIFTR.exportNewCount === 0;
-    allBtn.disabled  = SIFTR.exportAllCount === 0;
-  }
-
-  function onEsc(e) {
-    if (e.key === "Escape" && stateProgress.hidden) closeModal();
-  }
-
-  function showState(name) {
-    stateOptions.hidden  = name !== "options";
-    stateProgress.hidden = name !== "progress";
-    stateComplete.hidden = name !== "complete";
-  }
-
-  function updateTimeEstimate(mode) {
-    const count   = mode === "new" ? SIFTR.exportNewCount : SIFTR.exportAllCount;
-    const minutes = Math.ceil(count * 15 / 60);
-    const mWord   = minutes === 1 ? "minute" : "minutes";
-    const fWord   = count === 1 ? "frame" : "frames";
-    timeEstimateEl.textContent = count > 0
-      ? `Each frame takes ~10–15 s to capture at high resolution. Exporting ${count} ${fWord} will take roughly ${minutes} ${mWord}.`
-      : "";
-  }
-
-  // ── Export start ──────────────────────────────────────────────────────────
-  async function runExport(mode) {
-    newBtn.disabled = allBtn.disabled = true;
-    errorEl.hidden = true;
-
-    if (mode === "retry") {
-      showState("progress");
-      progressCount.textContent = "Starting retry…";
-      progressFill.style.width = "0%";
-      progressFrame.hidden = true;
-      cancelCapture.disabled = false;
-      cancelCapture.textContent = "Cancel";
-    }
-
-    try {
-      const res = await fetch(`/api/market/${SIFTR.marketCode}/export`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
-
-      currentJobId = data.job_id;
-      currentTotal = data.total;
-
-      showState("progress");
-      progressCount.textContent = `0 of ${data.total} complete`;
-      progressFill.style.width = "0%";
-      progressFrame.hidden = true;
-      cancelCapture.disabled = false;
-      cancelCapture.textContent = "Cancel";
-
-      startPolling(data.job_id);
-
-    } catch (err) {
-      showState("options");
-      errorEl.textContent = err.message;
-      errorEl.hidden = false;
-      newBtn.disabled = SIFTR.exportNewCount === 0;
-      allBtn.disabled = SIFTR.exportAllCount === 0;
-    }
-  }
-
-  // ── Polling ───────────────────────────────────────────────────────────────
-  function startPolling(jobId) {
-    clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      try {
-        const res  = await fetch(`/api/export/job/${jobId}`);
-        const data = await res.json();
-        updateProgressUI(data);
-        if (data.status !== "running") {
-          clearInterval(pollTimer);
-          onExportComplete(data);
-        }
-      } catch (_) { /* keep polling on transient network errors */ }
-    }, 2000);
-  }
-
-  function updateProgressUI(data) {
-    const current = data.current ?? 0;
-    const total   = data.total   ?? currentTotal;
-    progressCount.textContent = `${current} of ${total} complete`;
-    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-    progressFill.style.width = `${pct}%`;
-
-    if (data.current_frame_id) {
-      const parts   = data.current_frame_id.split("__");
-      progressThumb.src = `/frames/${parts[0]}/${parts[1]}/${data.current_frame_id}.jpg`;
-      progressTc.textContent = data.current_frame_timecode ?? "";
-      progressFrame.hidden = false;
-    }
-  }
-
-  // ── Completion ────────────────────────────────────────────────────────────
-  function onExportComplete(data) {
-    if (data.results) {
-      applyExportResults(data.results);
-      adjustStatusCounts(data.exported ?? 0, data.failed ?? 0);
-    }
-
-    const exported     = data.exported ?? 0;
-    const failed       = data.failed   ?? 0;
-    const wasCancelled = data.status === "cancelled";
-
-    completeTitleEl.textContent = wasCancelled ? "Export cancelled" : "Export complete";
-
-    let summary = `${exported} frame${exported !== 1 ? "s" : ""} captured`;
-    if (failed > 0) summary += ` · ${failed} failed`;
-    if (wasCancelled && exported === 0) summary = "No frames captured before cancellation.";
-    completeSummary.textContent = summary;
-    completeFolder.textContent  = data.folder ?? "";
-
-    retryBtn.hidden = failed === 0;
-    if (failed > 0) retryBtn.textContent = `Retry failed (${failed})`;
-
-    showState("complete");
-
-    if (exported > 0) showToast(data);
-  }
-
-  // ── DOM helpers ───────────────────────────────────────────────────────────
-  function applyExportResults(results) {
-    document.querySelectorAll(".frame").forEach((btn) => {
-      const result = results[btn.dataset.frameId];
-      if (!result) return;
-
-      const newStatus = result.export_status;
-      STATUS_CLASSES.forEach((cls) => btn.classList.remove(cls));
-      btn.classList.add(newStatus.replace(/_/g, "-"));
-      btn.dataset.exportStatus = newStatus;
-      btn.setAttribute("aria-label",
-        `Frame at ${btn.querySelector(".frame-meta")?.textContent?.trim() ?? ""}, ${newStatus.replace(/_/g, " ")}`
-      );
-
-      const ol = btn.querySelector(".frame-state-overlay");
-      if (ol) {
-        ol.innerHTML =
-          newStatus === "exported"
-            ? '<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>'
-            : newStatus === "export_failed"
-            ? '<span class="frame-pill frame-pill--failed">✗ FAILED</span>'
-            : "";
-      }
-
-      updateVideoStats(btn);
-    });
-  }
-
-  function adjustStatusCounts(exported, failed) {
-    const total = exported + failed;
-    nudgeCount("shortlisted", -total);
-    nudgeCount("exported",    +exported);
-    nudgeCount("failed",      +failed);
-  }
-
-  function showToast(data) {
-    const fWord = (data.exported ?? 0) === 1 ? "frame" : "frames";
-    let msg = `${data.exported ?? 0} ${fWord} exported`;
-    if ((data.failed ?? 0) > 0) msg += `, ${data.failed} failed`;
-    if (data.folder) msg += ` — ${data.folder}`;
-    toastMsg.textContent = msg;
-    toast.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toast.hidden = true; }, 7000);
-  }
-})();
-
 // ── Shortlist toggle (event delegation — works for dynamically added cards) ───
 
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest(".frame");
   if (!btn) return;
 
-  const exportStatus = btn.dataset.exportStatus;
-  if (exportStatus === "exported") return;
-
-  const frameId = btn.dataset.frameId;
+  const prevStatus = btn.dataset.exportStatus;
+  const frameId    = btn.dataset.frameId;
 
   const res = await fetch(`/api/frame/${encodeURIComponent(frameId)}/toggle`, {
     method: "POST",
@@ -301,41 +49,26 @@ document.addEventListener("click", async (e) => {
     `Frame at ${btn.querySelector(".frame-meta")?.textContent?.trim() ?? ""}, ${newStatus.replace(/_/g, " ")}`
   );
 
-  const overlay = btn.querySelector(".frame-state-overlay");
-  if (overlay) {
-    overlay.innerHTML =
-      newStatus === "exported"
-        ? '<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>'
-        : newStatus === "export_failed"
-        ? '<span class="frame-pill frame-pill--failed">✗ FAILED</span>'
-        : "";
-  }
-
   updateVideoStats(btn);
-  nudgeCount(statusToShowVal(exportStatus), -1);
-  nudgeCount(statusToShowVal(newStatus),    +1);
+  nudgeCount(prevStatus,  -1);
+  nudgeCount(newStatus,   +1);
 });
 
 
-// Recount all four statuses within a video block and refresh the stat spans
+// Recount shortlisted frames within a video block and refresh the stat span
 function updateVideoStats(frameBtn) {
   const videoBlock = frameBtn.closest(".video-block");
   if (!videoBlock) return;
 
-  const counts = { shortlisted: 0, exported: 0, "export-failed": 0 };
+  let shortlisted = 0;
   videoBlock.querySelectorAll(".frame").forEach((f) => {
-    const s = f.dataset.exportStatus;
-    if (s === "shortlisted")   counts.shortlisted++;
-    if (s === "exported")      counts.exported++;
-    if (s === "export_failed") counts["export-failed"]++;
+    if (f.dataset.exportStatus === "shortlisted") shortlisted++;
   });
 
   const countEl = videoBlock.querySelector(".video-frame-count");
   if (!countEl) return;
 
-  setStatSpan(countEl, "stat-shortlisted", counts.shortlisted, "shortlisted");
-  setStatSpan(countEl, "stat-exported",    counts.exported,    "exported");
-  setStatSpan(countEl, "stat-failed",      counts["export-failed"], "failed");
+  setStatSpan(countEl, "stat-shortlisted", shortlisted, "shortlisted");
 }
 
 function setStatSpan(parent, cls, count, label) {
@@ -589,7 +322,6 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
     card.dataset.frameId      = frame_id;
     card.dataset.timecode     = timecode;
     card.dataset.exportStatus = es;
-    card.dataset.exportRound  = "";
     card.dataset.videoId      = videoId;
     card.dataset.videoTitle   = videoTitle;
     card.dataset.creatorName  = creatorName;
@@ -651,24 +383,27 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const STATUS_LABELS = {
-    exported:      "Exported",
-    shortlisted:   "Shortlisted",
-    unreviewed:    "Unreviewed",
-    export_failed: "Failed",
+    shortlisted: "Shortlisted",
+    unreviewed:  "Unreviewed",
   };
 
   const BADGE_INFO = {
-    exported:      { cls: "status--exported",      text: (r) => `✓ Exported${r ? " · Round " + r : ""}` },
-    shortlisted:   { cls: "status--shortlisted",   text: () => "Shortlisted" },
-    export_failed: { cls: "status--export-failed", text: () => "✗ Failed" },
-    unreviewed:    { cls: "",                       text: () => "" },
+    shortlisted: { cls: "status--shortlisted", text: () => "Shortlisted" },
+    unreviewed:  { cls: "",                    text: () => "" },
   };
+
+  function timecodeToSeconds(tc) {
+    const parts = tc.split(":");
+    return parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10);
+  }
+
+  const ytLink = document.getElementById("da-youtube");
 
   function renderPanel(data) {
     const es = data.exportStatus;
     const bi = BADGE_INFO[es] || { cls: "", text: () => es };
     statusBadge.className = "detail-status-badge" + (bi.cls ? " " + bi.cls : "");
-    statusBadge.textContent = bi.text(data.exportRound);
+    statusBadge.textContent = bi.text();
 
     detailImg.classList.add("is-loading");
     detailImg.src = data.imgUrl;
@@ -683,6 +418,11 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
     dpTimecode.textContent = data.timecode;
     dpStatus.textContent = STATUS_LABELS[es] || es;
     dpFrameId.textContent = data.frameId;
+
+    if (ytLink) {
+      const ts = timecodeToSeconds(data.timecode);
+      ytLink.href = `https://youtu.be/${data.videoId}?t=${ts}`;
+    }
 
     renderPanelThemes(data.videoId, data.themes);
     renderShortlistBtn(es);
@@ -770,16 +510,13 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
     } else if (es === "shortlisted") {
       shortlistBtn.classList.add("action--unshortlist");
       shortlistBtn.textContent = "Remove from shortlist";
-    } else if (es === "export_failed") {
-      shortlistBtn.classList.add("action--requeue");
-      shortlistBtn.textContent = "Re-queue for export";
     } else {
       shortlistBtn.setAttribute("hidden", "");
     }
   }
 
   shortlistBtn.addEventListener("click", async () => {
-    if (!current || current.exportStatus === "exported") return;
+    if (!current) return;
 
     const frameId    = current.frameId;
     const prevStatus = current.exportStatus;
@@ -795,7 +532,7 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
 
     const bi = BADGE_INFO[newStatus] || { cls: "", text: () => newStatus };
     statusBadge.className = "detail-status-badge" + (bi.cls ? " " + bi.cls : "");
-    statusBadge.textContent = bi.text(current.exportRound);
+    statusBadge.textContent = bi.text();
     dpStatus.textContent = STATUS_LABELS[newStatus] || newStatus;
     renderShortlistBtn(newStatus);
 
@@ -806,23 +543,14 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
       gridFrame.classList.add(newStatus.replace(/_/g, "-"));
       gridFrame.setAttribute("aria-label",
         `Frame at ${current.timecode}, ${newStatus.replace(/_/g, " ")}`);
-      const ol = gridFrame.querySelector(".frame-state-overlay");
-      if (ol) {
-        ol.innerHTML =
-          newStatus === "exported"
-            ? '<span class="frame-pill frame-pill--exported">✓ EXPORTED</span>'
-            : newStatus === "export_failed"
-            ? '<span class="frame-pill frame-pill--failed">✗ FAILED</span>'
-            : "";
-      }
       updateVideoStats(gridFrame);
     }
 
     const gridCard = document.querySelector(`.frame-card[data-frame-id="${frameId}"]`);
     if (gridCard) gridCard.dataset.exportStatus = newStatus;
 
-    nudgeCount(statusToShowVal(prevStatus), -1);
-    nudgeCount(statusToShowVal(newStatus),  +1);
+    nudgeCount(prevStatus, -1);
+    nudgeCount(newStatus,  +1);
   });
 
   // ── Expand buttons (delegated — works for dynamically added cards) ────────────
@@ -844,7 +572,6 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
       frameId:      card.dataset.frameId,
       timecode:     card.dataset.timecode,
       exportStatus: card.dataset.exportStatus,
-      exportRound:  card.dataset.exportRound || "",
       videoId,
       videoTitle:   card.dataset.videoTitle,
       creatorName:  card.dataset.creatorName,
@@ -1098,7 +825,7 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
       if (data.failed)      parts.push(`${data.failed} failed`);
       await showAlert(
         `Can't delete '${videoTitle}' yet`,
-        `It has ${parts.join(", ")} frame(s). Please remove these from the shortlist first, then try again.`
+        `It has ${parts.join(", ")} frame(s) that must be un-shortlisted before deleting.`
       );
       return;
     }

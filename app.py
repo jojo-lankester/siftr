@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import glob
 import os
 import re
@@ -10,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import uuid
 import yaml
 from datetime import datetime, timezone, timedelta
@@ -20,7 +18,6 @@ from flask import Flask, abort, jsonify, render_template, request, send_file, ur
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "database.sqlite")
 FRAMES_DIR = os.path.join(BASE_DIR, "frames")
-EXPORTS_DIR = os.path.join(BASE_DIR, "exports")
 AVATARS_DIR = os.path.join(BASE_DIR, "creator_avatars")
 
 YAML_PATH   = os.path.join(BASE_DIR, "videos.yaml")
@@ -30,9 +27,6 @@ KNOWN_MARKETS = ["AU", "BR", "DE", "EU", "FR", "ID", "IN", "JP", "UK", "US"]
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
-
-_export_jobs: dict[str, dict] = {}
-_export_jobs_lock = threading.Lock()
 
 _yaml_lock = threading.Lock()  # serialise all videos.yaml reads+writes
 
@@ -57,174 +51,6 @@ def _read_log_tail(n: int = 25) -> str:
         return "".join(lines[-n:]).strip()
     except Exception:
         return ""
-
-
-def _update_export_job(job_id: str, **kwargs) -> None:
-    with _export_jobs_lock:
-        if job_id in _export_jobs:
-            _export_jobs[job_id].update(kwargs)
-
-
-def _timecode_to_seconds(timecode: str) -> float:
-    """Convert HH:MM:SS.mmm timecode string to seconds, preserving sub-second precision."""
-    parts = timecode.split(":")
-    h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
-    return h * 3600 + m * 60 + s
-
-
-def _log_capture(frame_id: str, event: str, error: str = "") -> None:
-    log_dir = os.path.join(BASE_DIR, "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    line = f"{ts}  {event.upper():8}  {frame_id}"
-    if error:
-        line += f"  — {error}"
-    with open(os.path.join(log_dir, "capture.log"), "a", encoding="utf-8") as f:
-        f.write(line + "\n")
-
-
-def _run_export_job(job_id: str, market_code: str, frames: list[dict],
-                    export_round: int, export_dir: str, folder_name: str,
-                    avatar_map: dict[str, str | None] | None = None) -> None:
-    import playwright_capture as pc
-
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f) or {}
-    timeout_ms = int(cfg.get("playwright_timeout_seconds", 60)) * 1000
-    delay     = float(cfg.get("playwright_delay_between_captures", 2))
-    headless  = bool(cfg.get("playwright_headless", True))
-
-    conn = get_db()
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    manifest_rows: list[dict] = []
-    results: dict[str, dict] = {}
-
-    for i, frame in enumerate(frames):
-        with _export_jobs_lock:
-            if _export_jobs[job_id].get("cancelled", False):
-                break
-
-        frame_id  = frame["frame_id"]
-        parts     = frame_id.split("__")
-        video_url = frame["video_url"] or f"https://www.youtube.com/watch?v={parts[2]}"
-        timestamp = _timecode_to_seconds(frame["timecode"])
-        output_path = os.path.join(export_dir, frame_id + ".jpg")
-
-        _update_export_job(job_id,
-            current_frame_id=frame_id,
-            current_frame_timecode=frame["timecode"])
-        _log_capture(frame_id, "attempt")
-
-        try:
-            pc.capture_frame(video_url, timestamp, output_path,
-                             headless=headless, timeout_ms=timeout_ms)
-
-            first_exported_at = frame["exported_at"] or now
-            conn.execute("""
-                UPDATE frames SET
-                    export_status = 'exported',
-                    exported_at   = ?,
-                    export_round  = ?,
-                    export_error  = NULL
-                WHERE frame_id = ?
-            """, (now, export_round, frame_id))
-            conn.commit()
-
-            manifest_rows.append({
-                "frame_id":          frame_id,
-                "creator_name":      frame["creator_name"],
-                "market":            frame["market"],
-                "video_title":       frame["video_title"],
-                "video_url":         video_url,
-                "timecode":          frame["timecode"],
-                "themes":            frame["themes"] or "",
-                "export_round":      export_round,
-                "first_exported_at": first_exported_at,
-                "this_exported_at":  now,
-                "resolution":        "1920x1080",
-                "high_res_status":   "success",
-                "avatar_filename":   "",  # filled in below after avatar copy
-            })
-            results[frame_id] = {"export_status": "exported"}
-            _log_capture(frame_id, "success")
-
-            with _export_jobs_lock:
-                _export_jobs[job_id]["exported"] += 1
-                _export_jobs[job_id]["current"]   = i + 1
-
-        except Exception as exc:
-            error_msg = str(exc)
-            if os.path.exists(output_path):
-                os.remove(output_path)
-
-            conn.execute("""
-                UPDATE frames SET
-                    export_status = 'export_failed',
-                    export_error  = ?
-                WHERE frame_id = ?
-            """, (error_msg, frame_id))
-            conn.commit()
-
-            results[frame_id] = {"export_status": "export_failed", "error": error_msg}
-            _log_capture(frame_id, "failed", error_msg)
-
-            with _export_jobs_lock:
-                _export_jobs[job_id]["failed"]  += 1
-                _export_jobs[job_id]["current"]  = i + 1
-
-        # Polite delay between captures
-        with _export_jobs_lock:
-            cancelled = _export_jobs[job_id].get("cancelled", False)
-        if not cancelled and i < len(frames) - 1:
-            time.sleep(delay)
-
-    # Copy creator avatars into export_dir/avatars/
-    slug_to_avatar_filename: dict[str, str] = {}
-    if avatar_map:
-        avatars_export_dir = os.path.join(export_dir, "avatars")
-        os.makedirs(avatars_export_dir, exist_ok=True)
-        for frame in frames:
-            slug = frame.get("creator_slug", "")
-            if slug in slug_to_avatar_filename:
-                continue
-            rel = (avatar_map or {}).get(slug)
-            if rel:
-                src = os.path.join(BASE_DIR, rel)
-                if os.path.isfile(src):
-                    dst_name = f"{slug}.jpg"
-                    try:
-                        shutil.copy2(src, os.path.join(avatars_export_dir, dst_name))
-                        slug_to_avatar_filename[slug] = f"avatars/{dst_name}"
-                    except Exception:
-                        pass
-            if slug not in slug_to_avatar_filename:
-                slug_to_avatar_filename[slug] = ""
-
-    # Backfill avatar_filename into manifest rows
-    for row in manifest_rows:
-        slug = next(
-            (f.get("creator_slug", "") for f in frames if f["frame_id"] == row["frame_id"]),
-            "",
-        )
-        row["avatar_filename"] = slug_to_avatar_filename.get(slug, "")
-
-    # Write manifest (successful frames only)
-    csv_path = os.path.join(export_dir, "manifest.csv")
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
-        writer.writeheader()
-        writer.writerows(manifest_rows)
-
-    conn.close()
-
-    with _export_jobs_lock:
-        was_cancelled = _export_jobs[job_id].get("cancelled", False)
-        _export_jobs[job_id].update({
-            "status":               "cancelled" if was_cancelled else "complete",
-            "results":              results,
-            "current_frame_id":     None,
-            "current_frame_timecode": None,
-        })
 
 
 def discover_channel_videos(channel_url: str, max_videos: int = 3, months: int = 18) -> list[dict]:
@@ -683,9 +509,7 @@ def index():
             COUNT(DISTINCT v.video_id)                                           AS video_count,
             COUNT(f.frame_id)                                                    AS frame_count,
             SUM(CASE WHEN f.export_status = 'unreviewed'    THEN 1 ELSE 0 END)  AS unreviewed_count,
-            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted_count,
-            SUM(CASE WHEN f.export_status = 'exported'      THEN 1 ELSE 0 END)  AS exported_count,
-            SUM(CASE WHEN f.export_status = 'export_failed' THEN 1 ELSE 0 END)  AS failed_count
+            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted_count
         FROM videos v
         LEFT JOIN frames f ON v.video_id = f.video_id
         GROUP BY v.market
@@ -704,8 +528,6 @@ def index():
 SHOW_CLAUSES = {
     "unreviewed":  "AND export_status = 'unreviewed'",
     "shortlisted": "AND export_status = 'shortlisted'",
-    "exported":    "AND export_status = 'exported'",
-    "failed":      "AND export_status = 'export_failed'",
 }
 
 
@@ -731,9 +553,7 @@ def review(market_code: str):
             COUNT(DISTINCT v.video_id)                                           AS video_count,
             COUNT(f.frame_id)                                                    AS frame_count,
             SUM(CASE WHEN f.export_status = 'unreviewed'    THEN 1 ELSE 0 END)  AS unreviewed_count,
-            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted_count,
-            SUM(CASE WHEN f.export_status = 'exported'      THEN 1 ELSE 0 END)  AS exported_count,
-            SUM(CASE WHEN f.export_status = 'export_failed' THEN 1 ELSE 0 END)  AS failed_count
+            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted_count
         FROM videos v
         LEFT JOIN frames f ON v.video_id = f.video_id
         WHERE v.market = ?
@@ -777,9 +597,7 @@ def review(market_code: str):
             v.themes, v.market, v.date_added,
             COUNT(f.frame_id)                                                    AS total_frames,
             SUM(CASE WHEN f.export_status = 'unreviewed'    THEN 1 ELSE 0 END)  AS unreviewed,
-            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted,
-            SUM(CASE WHEN f.export_status = 'exported'      THEN 1 ELSE 0 END)  AS exported,
-            SUM(CASE WHEN f.export_status = 'export_failed' THEN 1 ELSE 0 END)  AS failed
+            SUM(CASE WHEN f.export_status = 'shortlisted'   THEN 1 ELSE 0 END)  AS shortlisted
         FROM videos v
         LEFT JOIN frames f ON v.video_id = f.video_id
         WHERE v.market = ?
@@ -819,8 +637,6 @@ def review(market_code: str):
             "total_frames": vrow["total_frames"],
             "unreviewed": vrow["unreviewed"] or 0,
             "shortlisted": vrow["shortlisted"] or 0,
-            "exported": vrow["exported"] or 0,
-            "failed": vrow["failed"] or 0,
             "frames": [dict(f) for f in frames],
             "date_added": date_added,
             "is_new": _is_new(date_added),
@@ -846,15 +662,13 @@ def review(market_code: str):
         videos = sorted(creator_data["videos"], key=lambda v: v["date_added"], reverse=True)
         slug = creator_data["creator_slug"]
         groups.append({
-            "creator_name":     creator_data["creator_name"],
-            "creator_slug":     slug,
-            "avatar_path":      avatar_map.get(slug),
-            "avatar_initials":  _creator_initials(creator_data["creator_name"]),
-            "videos":           videos,
-            "is_new":           any(v["is_new"] for v in videos),
+            "creator_name":      creator_data["creator_name"],
+            "creator_slug":      slug,
+            "avatar_path":       avatar_map.get(slug),
+            "avatar_initials":   _creator_initials(creator_data["creator_name"]),
+            "videos":            videos,
+            "is_new":            any(v["is_new"] for v in videos),
             "total_shortlisted": sum(v["shortlisted"] for v in videos),
-            "total_exported":   sum(v["exported"] for v in videos),
-            "total_failed":     sum(v["failed"] for v in videos),
         })
 
     conn.close()
@@ -896,17 +710,13 @@ def serve_avatar(market: str, filename: str):
 # API: toggle export_status
 #
 # Transitions:
-#   unreviewed    → shortlisted       (designer selects)
-#   shortlisted   → unreviewed        (designer deselects)
-#   export_failed → shortlisted       (re-queue for retry)
-#   exported      → exported          (no-op; managed by export process)
+#   unreviewed  → shortlisted  (designer selects)
+#   shortlisted → unreviewed   (designer deselects)
 # ---------------------------------------------------------------------------
 
 _TOGGLE: dict[str, str] = {
-    "unreviewed":    "shortlisted",
-    "shortlisted":   "unreviewed",
-    "export_failed": "shortlisted",
-    "exported":      "exported",
+    "unreviewed":  "shortlisted",
+    "shortlisted": "unreviewed",
 }
 
 
@@ -1131,132 +941,6 @@ def update_themes(video_id: str):
     conn.commit()
     conn.close()
     return jsonify({"themes": themes})
-
-
-# ---------------------------------------------------------------------------
-# API: export market frames
-#
-# mode="new"  — export_status = 'shortlisted' only (not yet exported)
-# mode="all"  — export_status IN ('shortlisted', 'exported') (re-export everything)
-#
-# Per-run steps:
-#   1. Determine next export_round for this market
-#   2. Create exports/export__{market}__{date}__round{N}/
-#   3. Copy each source frame; mark export_status on success or failure
-#   4. Write manifest.csv
-#   5. Return summary JSON
-# ---------------------------------------------------------------------------
-
-_CSV_FIELDS = [
-    "frame_id", "creator_name", "market", "video_title", "video_url",
-    "timecode", "themes", "export_round", "first_exported_at",
-    "this_exported_at", "resolution", "high_res_status", "avatar_filename",
-]
-
-
-@app.post("/api/market/<market_code>/export")
-def export_market(market_code: str):
-    data = request.get_json(silent=True) or {}
-    mode = data.get("mode", "new")  # "new" | "all" | "retry"
-
-    conn = get_db()
-
-    if not conn.execute("SELECT 1 FROM videos WHERE market = ? LIMIT 1", (market_code,)).fetchone():
-        conn.close()
-        return jsonify({"error": "market not found"}), 404
-
-    if mode == "all":
-        status_filter = "AND f.export_status IN ('shortlisted', 'exported')"
-    elif mode == "retry":
-        status_filter = "AND f.export_status = 'export_failed'"
-    else:
-        status_filter = "AND f.export_status = 'shortlisted'"
-
-    frames = conn.execute(f"""
-        SELECT
-            f.frame_id, f.timecode, f.resolution, f.exported_at,
-            v.creator_name, v.creator_slug, v.market,
-            v.video_title, v.video_url, v.themes
-        FROM frames f
-        JOIN videos v ON f.video_id = v.video_id
-        WHERE v.market = ? {status_filter}
-        ORDER BY v.creator_name, f.timestamp_seconds
-    """, (market_code,)).fetchall()
-    frames_list = [dict(f) for f in frames]
-
-    if not frames_list:
-        conn.close()
-        return jsonify({"error": "no frames to export"}), 400
-
-    row = conn.execute("""
-        SELECT MAX(f.export_round)
-        FROM frames f JOIN videos v ON f.video_id = v.video_id
-        WHERE v.market = ?
-    """, (market_code,)).fetchone()
-    export_round = (row[0] or 0) + 1
-    conn.close()
-
-    date_str    = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    folder_name = f"export__{market_code}__{date_str}__round{export_round}"
-    export_dir  = os.path.join(EXPORTS_DIR, folder_name)
-    os.makedirs(export_dir, exist_ok=True)
-
-    job_id = str(uuid.uuid4())
-    with _export_jobs_lock:
-        _export_jobs[job_id] = {
-            "status":                 "running",
-            "total":                  len(frames_list),
-            "current":                0,
-            "exported":               0,
-            "failed":                 0,
-            "cancelled":              False,
-            "current_frame_id":       None,
-            "current_frame_timecode": None,
-            "results":                {},
-            "folder":                 folder_name,
-            "export_round":           export_round,
-        }
-
-    # Build slug → avatar_path map for use inside the export job
-    with open(YAML_PATH, encoding="utf-8") as f:
-        _yd = yaml.safe_load(f) or {}
-    export_avatar_map: dict[str, str | None] = {
-        c.get("creator_slug", ""): c.get("avatar_path")
-        for m in _yd.get("markets", [])
-        for c in m.get("creators", [])
-    }
-
-    threading.Thread(
-        target=_run_export_job,
-        args=(job_id, market_code, frames_list, export_round,
-              export_dir, folder_name, export_avatar_map),
-        daemon=True,
-    ).start()
-
-    return jsonify({
-        "job_id":       job_id,
-        "total":        len(frames_list),
-        "folder":       folder_name,
-        "export_round": export_round,
-    })
-
-
-@app.get("/api/export/job/<job_id>")
-def export_job_status(job_id: str):
-    with _export_jobs_lock:
-        job = dict(_export_jobs.get(job_id, {}))
-    if not job:
-        return jsonify({"error": "not found"}), 404
-    return jsonify(job)
-
-
-@app.post("/api/export/job/<job_id>/cancel")
-def cancel_export_job(job_id: str):
-    with _export_jobs_lock:
-        if job_id not in _export_jobs:
-            return jsonify({"error": "not found"}), 404
-        _export_jobs[job_id]["cancelled"] = True
-    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------

@@ -1872,6 +1872,25 @@ a.setup-market-code:hover {
 /* Action rows */
 .detail-actions { padding: 4px 0 24px; }
 
+.detail-yt-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 24px;
+  background: var(--ink);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+  box-sizing: border-box;
+}
+.detail-yt-btn:hover { background: #222; }
+.detail-yt-icon { flex-shrink: 0; }
+.detail-yt-ext  { flex-shrink: 0; margin-left: auto; opacity: 0.55; }
+
 .detail-action-row {
   display: flex;
   align-items: center;

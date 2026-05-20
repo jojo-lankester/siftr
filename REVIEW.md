@@ -89,6 +89,43 @@ The legacy `status` column (unreviewed / shortlisted) remains in the DB but is n
 
 ---
 
+## Architectural decision: Playwright high-res capture removed (2026-05-20)
+
+### What was tried
+
+High-res frame capture was implemented using Playwright headless Chromium: navigate to the video on YouTube, seek to the exact timecode, fullscreen, screenshot at 1920×1080. The capture module (`playwright_capture.py`) was integrated into the export flow.
+
+### Why it was abandoned
+
+Two compounding reliability problems made it impractical:
+
+1. **Ad timeline drift** — YouTube inserts ads into the playback timeline. The timestamps recorded by FFmpeg during harvest reflect positions in the downloaded video file (no ads). YouTube's web player adds ad time to the seek position, so `seekTo(695s)` on the web player lands on a different video moment than second 695 of the downloaded file. The drift depends on how many ads have been inserted and their lengths — unpredictable and variable per playback session.
+
+2. **Encoding boundary drift** — Even without ads, there is typically ±0.5–1s of drift between FFmpeg-extracted timestamps and YouTube's web player due to keyframe alignment differences between the downloaded stream and the web player's stream. This is usually tolerable but occasionally lands on a clearly wrong frame (e.g. a cut edge).
+
+We added precise seek validation (checking `getCurrentTime()` vs requested timestamp) but this only caught cases where the player itself drifted, not the ad-insertion problem — the player would faithfully seek to the requested second, which was simply the wrong second relative to what the designer had shortlisted.
+
+### Design team decision
+
+The design team exports a small number of frames per report (typically 10–30). Manual screenshotting from YouTube is fast enough and produces reliably correct results. SIFTR now opens the video at the right moment via the **Watch on YouTube** button; the designer scrubs to the exact frame and takes a screenshot directly from YouTube.
+
+### What's preserved
+
+`playwright_spike.py` is kept at the project root as a reference proof-of-concept. It is not part of the active codebase.
+
+### Database columns (legacy, not removed)
+
+`export_status`, `exported_at`, `export_round`, `export_error` remain in the schema but are only used at the two-state level (unreviewed/shortlisted) now. The `exported` and `export_failed` values may exist in rows from before this change but are not written or displayed. These columns can be cleaned up in a future migration if desired.
+
+### If automated high-res capture is needed again
+
+Options to consider:
+- Restore the Export flow from git history (commit `299f84e` is the last known-good state)
+- Solve the yt-dlp high-res download problem so FFmpeg can extract directly at 1080p — this would bypass YouTube's web player entirely and eliminate both drift issues
+- Re-implement Playwright capture with ad-skipping logic and robust seek-drift correction
+
+---
+
 ## Critical bugs found in real-world use
 
 ### Playwright capture landing on wrong frame (found 2026-05-14)

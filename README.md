@@ -1,6 +1,16 @@
 # SIFTR
 
-SIFTR is a local Python/Flask tool for curating YouTube creator footage for impact reports. It downloads videos via yt-dlp, extracts key frames using scene-change detection and perceptual deduplication, and serves a browser UI where designers can browse frames by market and creator, shortlist the best ones, tag them with themes, and export a structured folder of images with a manifest CSV ready for reporting.
+SIFTR is a local Python/Flask tool for curating YouTube creator footage for impact reports. It downloads videos via yt-dlp, extracts key frames using scene-change detection and perceptual deduplication, and serves a browser UI where designers can browse frames by market and creator, shortlist the best ones, and tag them with themes.
+
+---
+
+## Workflow
+
+1. **Harvest** — SIFTR downloads videos and extracts frames automatically (scene-change detection + dedup).
+2. **Review** — Designers browse frames in the grid and shortlist the ones they want.
+3. **Get the high-res image** — Open the **Watch on YouTube** button in the frame detail panel. YouTube opens at the right moment (there may be ±0.5–1s drift from encoding boundaries). Scrub to the exact frame and take a screenshot from there.
+
+SIFTR's job is helping designers identify and shortlist the right frames. YouTube is the source for final high-res images.
 
 ---
 
@@ -36,13 +46,13 @@ Open **http://localhost:5001** in your browser.
 2. Run `python harvest.py` to download videos and extract frames (or trigger it from the Manage page)
 3. Open a market in the browser, browse frames, and click to shortlist
 4. Tag videos with themes using the chip editor on each video block
-5. Switch to the **Shortlisted** filter and click **Export** to generate a folder of images + `manifest.csv`
+5. For any shortlisted frame, click **Expand** → **Watch on YouTube** to open it at the right moment and screenshot at full resolution
 
 ---
 
 ## Known constraints
 
-- **360p output (current)** — YouTube's SABR streaming enforcement limits yt-dlp downloads to 360p in the current setup. The review UI uses these low-res frames for browsing. High-res capture is done at export time using a Playwright headless browser to screenshot frames directly from YouTube at the exact timecode.
+- **360p output (current)** — YouTube's SABR streaming enforcement limits yt-dlp downloads to 360p in the current setup. The review UI uses these low-res frames for browsing. Final high-res images come from YouTube directly via the Watch on YouTube link.
 - **Chrome cookies required for download** — yt-dlp uses your local Chrome cookie store for YouTube auth. Chrome must be installed and logged in to a YouTube account on the machine running the harvester.
 
 ## Test data note
@@ -55,18 +65,16 @@ The creators in `videos.yaml` (`Test Creator A`, `Test Creator B`) are placehold
 
 ```
 siftr/
-├── app.py              # Flask app — routes, DB, export logic
+├── app.py              # Flask app — routes, DB, review logic
 ├── harvest.py          # Orchestrator — download + extract pipeline
 ├── download.py         # yt-dlp wrapper
 ├── extract_frames.py   # FFmpeg frame extraction + dedup
-├── playwright_capture.py  # High-res frame capture via Playwright
 ├── setup.py            # DB initialisation (run once)
 ├── install.sh          # First-time setup script
 ├── videos.yaml         # Market → creator → video URL config
 ├── config.yaml         # Runtime settings (thresholds, resolution, etc.)
 ├── frames/             # Extracted images, organised by market/creator/frame_id
-├── exports/            # Export folders (one per export run)
-├── logs/               # Harvest and capture logs
+├── logs/               # Harvest logs
 ├── static/             # CSS and JS
 ├── templates/          # Jinja2 HTML templates
 └── database.sqlite     # SQLite DB (gitignored)
@@ -105,12 +113,7 @@ These are the individual steps `install.sh` performs, in order:
    pip install -r requirements.txt
    ```
 
-4. **Install Playwright's Chromium browser** (used for high-res frame capture):
-   ```bash
-   python -m playwright install chromium
-   ```
-
-5. **Install FFmpeg** (used for frame extraction):
+4. **Install FFmpeg** (used for frame extraction):
    ```bash
    # macOS
    brew install ffmpeg
@@ -118,13 +121,13 @@ These are the individual steps `install.sh` performs, in order:
    sudo apt install ffmpeg
    ```
 
-6. **Initialise the database:**
+5. **Initialise the database:**
    ```bash
    python setup.py
    ```
    This creates `database.sqlite` with the full schema. Safe to run multiple times.
 
-7. **Start the app:**
+6. **Start the app:**
    ```bash
    python app.py
    ```
