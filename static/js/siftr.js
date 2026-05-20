@@ -421,7 +421,7 @@ document.querySelectorAll(".creator-toggle").forEach((btn) => {
 
     if (ytLink) {
       const ts = timecodeToSeconds(data.timecode);
-      ytLink.href = `https://youtu.be/${data.videoId}?t=${ts}`;
+      ytLink.href = `https://www.youtube.com/embed/${data.videoId}?start=${ts}&autoplay=0`;
     }
 
     renderPanelThemes(data.videoId, data.themes);
